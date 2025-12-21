@@ -5,14 +5,18 @@ import {
   View,
   Text,
   Image,
-  StyleSheet
+  StyleSheet,
 } from "@react-pdf/renderer";
 import type { BingoGrid } from "@/lib/bingo";
 
 const styles = StyleSheet.create({
   page: { padding: 24, fontSize: 10 },
   banner: { height: 80, width: "100%", marginBottom: 12, objectFit: "cover" },
-  titleRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  titleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
   grid: { borderWidth: 1, borderColor: "#111" },
   row: { flexDirection: "row" },
   cell: {
@@ -22,11 +26,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#111",
     padding: 6,
-    justifyContent: "center"
+    justifyContent: "center",
   },
   cellText: { fontSize: 9, textAlign: "center" },
-  footer: { marginTop: 10, flexDirection: "row", justifyContent: "space-between" },
-  centerLogo: { width: 48, height: 48, marginTop: 6, alignSelf: "center", objectFit: "contain" }
+  footer: {
+    marginTop: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  centerLogo: {
+    width: 48,
+    height: 48,
+    marginTop: 6,
+    alignSelf: "center",
+    objectFit: "contain",
+  },
 });
 
 export function BingoPackPdf(props: {
@@ -35,18 +49,6 @@ export function BingoPackPdf(props: {
   bannerUrl?: string;
   logoUrl?: string;
   cards: { id: string; grid: BingoGrid }[];
-}) {
-  const bannerUrl = props.bannerUrl ?? "";
-  const logoUrl = props.logoUrl ?? "";
-
-  return (
-    <Document>
-      {props.cards.map((card) => (
-        <Page key={card.id} size="LETTER" style={styles.page}>
-          {bannerUrl ? <Image src={bannerUrl} style={styles.banner} /> : null}
-
-          <View style={styles.titleRow}>
-            <Text>{props.packTitle  cards: { id: string; grid: BingoGrid }[];
 }) {
   const bannerUrl = props.bannerUrl ?? "";
   const logoUrl = props.logoUrl ?? "";
@@ -70,15 +72,12 @@ export function BingoPackPdf(props: {
                   const isLastCol = c === 4;
                   const isLastRow = r === 4;
 
+                  const cellStyle: any[] = [styles.cell];
+                  if (isLastCol) cellStyle.push({ borderRightWidth: 0 });
+                  if (isLastRow) cellStyle.push({ borderBottomWidth: 0 });
+
                   return (
-                    <View
-                      key={c}
-                      style={[
-                        styles.cell,
-                        isLastCol && { borderRightWidth: 0 },
-                        isLastRow && { borderBottomWidth: 0 }
-                      ]}
-                    >
+                    <View key={c} style={cellStyle}>
                       <Text style={styles.cellText}>{cell}</Text>
                       {isCenter && logoUrl ? (
                         <Image src={logoUrl} style={styles.centerLogo} />
