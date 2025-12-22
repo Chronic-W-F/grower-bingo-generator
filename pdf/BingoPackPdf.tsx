@@ -1,6 +1,14 @@
 // pdf/BingoPackPdf.tsx
 import React from "react";
-import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
+import {
+  Document,
+  Page,
+  Text,
+  View,
+  StyleSheet,
+  Image,
+  pdf,
+} from "@react-pdf/renderer";
 
 export type BingoGrid = string[][];
 export type BingoCard = { id: string; grid: BingoGrid };
@@ -14,42 +22,55 @@ export type BingoPack = {
 };
 
 const styles = StyleSheet.create({
-  page: { padding: 24, fontSize: 10 },
+  page: { padding: 28, fontSize: 11, fontFamily: "Helvetica" },
+
   headerWrap: { marginBottom: 10 },
-  headerBar: { backgroundColor: "#000", padding: 8, borderRadius: 6 },
-  headerTitle: { color: "#fff", fontSize: 14, fontWeight: "bold" as const },
-  headerSponsor: { color: "#ddd", fontSize: 9 },
-
-  cardIdRow: {
-    flexDirection: "row" as const,
-    justifyContent: "space-between" as const,
-    marginBottom: 6,
+  headerBar: {
+    height: 38,
+    backgroundColor: "#111",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: "center",
   },
+  headerTitle: { color: "white", fontSize: 14, fontWeight: "bold" },
+  headerSub: { color: "white", fontSize: 10, marginTop: 2 },
 
-  grid: { borderWidth: 1, borderColor: "#333" },
-  row: { flexDirection: "row" as const },
+  metaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
+  metaText: { color: "#222", fontSize: 9 },
+
+  board: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#333",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  row: { flexDirection: "row" },
 
   cell: {
     flex: 1,
     borderRightWidth: 1,
     borderBottomWidth: 1,
     borderColor: "#333",
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    height: 48,
-    padding: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    height: 58,
+    padding: 6,
   },
+  lastCol: { borderRightWidth: 0 },
+  lastRow: { borderBottomWidth: 0 },
 
-  // last col/row fixes (no double border)
-  cellLastCol: { borderRightWidth: 0 },
-  cellLastRow: { borderBottomWidth: 0 },
+  cellText: { textAlign: "center", fontSize: 9, color: "#111" },
 
-  cellText: { textAlign: "center" as const, fontSize: 9 },
+  freeCell: { backgroundColor: "#111" },
+  freeText: { color: "white", fontSize: 9, fontWeight: "bold" },
+  freeSub: { color: "white", fontSize: 7, marginTop: 2 },
 
-  freeCell: { backgroundColor: "#000" },
-  freeText: { color: "#fff", fontWeight: "bold" as const },
+  verify: { marginTop: 10, fontSize: 8, color: "#444" },
 
-  footer: { marginTop: 6, fontSize: 8, color: "#555" },
+  // optional logo inside FREE square if provided
+  freeLogo: { width: 42, height: 42, marginBottom: 4 },
 });
 
 function BingoPackDoc({ pack }: { pack: BingoPack }) {
@@ -57,38 +78,48 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
     <Document>
       {pack.cards.map((card) => (
         <Page key={card.id} size="LETTER" style={styles.page}>
+          {/* Header */}
           <View style={styles.headerWrap}>
             <View style={styles.headerBar}>
               <Text style={styles.headerTitle}>{pack.packTitle}</Text>
-              <Text style={styles.headerSponsor}>Sponsor: {pack.sponsorName}</Text>
+              <Text style={styles.headerSub}>Sponsor: {pack.sponsorName}</Text>
+            </View>
+
+            <View style={styles.metaRow}>
+              <Text style={styles.metaText}>Card ID: {card.id}</Text>
+              <Text style={styles.metaText}>5×5 • Center is FREE</Text>
             </View>
           </View>
 
-          <View style={styles.cardIdRow}>
-            <Text>Card ID: {card.id}</Text>
-            <Text>5×5 • Center is FREE</Text>
-          </View>
-
-          <View style={styles.grid}>
+          {/* Board */}
+          <View style={styles.board}>
             {card.grid.map((row, rIdx) => (
               <View key={rIdx} style={styles.row}>
                 {row.map((cell, cIdx) => {
-                  const isFree = cell === "FREE";
+                  const isLastCol = cIdx === row.length - 1;
+                  const isLastRow = rIdx === card.grid.length - 1;
+                  const isFree = rIdx === 2 && cIdx === 2;
 
-                  // allow mixed style objects
-                  const cellStyles: any[] = [styles.cell];
-                  if (cIdx === 4) cellStyles.push(styles.cellLastCol);
-                  if (rIdx === 4) cellStyles.push(styles.cellLastRow);
-                  if (isFree) cellStyles.push(styles.freeCell);
-
-                  const textStyles: any[] = [styles.cellText];
-                  if (isFree) textStyles.push(styles.freeText);
+                  const cellStyle = [
+                    styles.cell,
+                    isLastCol ? styles.lastCol : ({} as any),
+                    isLastRow ? styles.lastRow : ({} as any),
+                    isFree ? styles.freeCell : ({} as any),
+                  ];
 
                   return (
-                    <View key={cIdx} style={cellStyles}>
-                      <Text style={textStyles}>
-                        {isFree ? `${pack.sponsorName}\nFREE` : cell}
-                      </Text>
+                    <View key={cIdx} style={cellStyle as any}>
+                      {isFree ? (
+                        <>
+                          {pack.logoUrl ? (
+                            <Image style={styles.freeLogo} src={pack.logoUrl} />
+                          ) : null}
+                          <Text style={styles.freeText}>{pack.sponsorName.toUpperCase()}</Text>
+                          <Text style={styles.freeSub}>FREE</Text>
+                        </>
+                      ) : (
+                        <Text style={styles.cellText}>{cell}</Text>
+                      )}
                     </View>
                   );
                 })}
@@ -96,8 +127,8 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
             ))}
           </View>
 
-          <Text style={styles.footer}>
-            Verification: Screenshot your card with Card ID visible when you claim bingo.
+          <Text style={styles.verify}>
+            Verification: Screenshot your card with your Card ID visible when you claim bingo.
           </Text>
         </Page>
       ))}
@@ -105,10 +136,49 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
   );
 }
 
-/** Always return a Buffer (Vercel-safe) */
+/**
+ * Converts whatever @react-pdf gives us into a Node Buffer.
+ * Handles Buffer, Uint8Array, ArrayBuffer, and ReadableStream.
+ */
+async function toNodeBuffer(input: unknown): Promise<Buffer> {
+  // Already Buffer
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(input)) return input;
+
+  // Uint8Array
+  if (input instanceof Uint8Array) return Buffer.from(input);
+
+  // ArrayBuffer
+  if (input instanceof ArrayBuffer) return Buffer.from(new Uint8Array(input));
+
+  // ReadableStream (Web)
+  const maybeStream = input as any;
+  if (maybeStream && typeof maybeStream.getReader === "function") {
+    const reader = maybeStream.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+    const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      merged.set(c, offset);
+      offset += c.byteLength;
+    }
+    return Buffer.from(merged);
+  }
+
+  // Fallback: try coercion
+  return Buffer.from(String(input), "utf8");
+}
+
 export async function renderBingoPackPdf(pack: BingoPack): Promise<Buffer> {
   const doc = <BingoPackDoc pack={pack} />;
   const instance = pdf(doc);
-  const buffer = await instance.toBuffer();
-  return buffer;
+
+  // @react-pdf/renderer may return Buffer OR ReadableStream depending on environment
+  const out = await instance.toBuffer();
+  return await toNodeBuffer(out);
 }
