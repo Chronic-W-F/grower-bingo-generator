@@ -1,9 +1,12 @@
-// pdf/BingoPackPdf.tsx
 import React from "react";
-import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
-import type { BingoCard } from "@/lib/bingo";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
-type Props = {
+export type BingoCard = {
+  id: string;
+  grid: string[][]; // 5x5 with "FREE" at center
+};
+
+export type BingoPackPdfProps = {
   packTitle: string;
   sponsorName: string;
   bannerUrl?: string;
@@ -12,45 +15,42 @@ type Props = {
 };
 
 const styles = StyleSheet.create({
-  page: { padding: 20, fontSize: 10 },
+  page: { padding: 18 },
+
   headerWrap: { marginBottom: 10 },
-  headerBar: {
-    backgroundColor: "#111",
-    borderRadius: 10,
-    padding: 10,
-  },
-  title: { color: "white", fontSize: 18, fontWeight: 700 },
-  subtitle: { color: "white", fontSize: 10, marginTop: 3 },
+  title: { fontSize: 18, fontWeight: 700 },
+  subtitle: { fontSize: 10, marginTop: 2 },
 
-  banner: { width: "100%", height: 60, marginTop: 10, borderRadius: 10, objectFit: "cover" },
+  banner: { width: "100%", height: 70, objectFit: "cover" as any, marginBottom: 8 },
 
-  metaRow: { marginTop: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardId: { fontSize: 9, opacity: 0.85 },
+  cardId: { fontSize: 10, marginBottom: 8 },
 
-  grid: { marginTop: 10, borderWidth: 1, borderColor: "#333" },
+  grid: { borderWidth: 2, borderColor: "#000" },
   row: { flexDirection: "row" },
 
-  cell: {
+  cellBase: {
     flex: 1,
+    height: 72,
     borderRightWidth: 1,
     borderBottomWidth: 1,
-    borderColor: "#333",
-    alignItems: "center",
+    borderColor: "#000",
     justifyContent: "center",
-    height: 64,
+    alignItems: "center",
     padding: 6,
   },
-  cellLastCol: { borderRightWidth: 0 },
-  lastRowCell: { borderBottomWidth: 0 },
 
-  freeCell: { backgroundColor: "#f2f2f2" },
-  freeLogo: { width: 36, height: 36, marginBottom: 4, objectFit: "contain" },
-  cellText: { textAlign: "center" },
+  lastCol: { borderRightWidth: 0 },
+  lastRow: { borderBottomWidth: 0 },
 
-  footer: { marginTop: 8, fontSize: 9, opacity: 0.85 },
+  cellText: { fontSize: 10, textAlign: "center" },
+
+  freeCell: { backgroundColor: "#eee" },
+  freeLabel: { fontSize: 10, fontWeight: 700, marginTop: 4 },
+
+  freeLogo: { width: 40, height: 40, objectFit: "contain" as any },
 });
 
-export default function BingoPackPdf(props: Props) {
+export default function BingoPackPdf(props: BingoPackPdfProps) {
   const { packTitle, sponsorName, bannerUrl, logoUrl, cards } = props;
 
   return (
@@ -58,47 +58,41 @@ export default function BingoPackPdf(props: Props) {
       {cards.map((card) => (
         <Page key={card.id} size="LETTER" style={styles.page}>
           <View style={styles.headerWrap}>
-            <View style={styles.headerBar}>
-              <Text style={styles.title}>{packTitle}</Text>
-              <Text style={styles.subtitle}>Sponsor: {sponsorName}</Text>
-            </View>
-
-            {bannerUrl ? <Image style={styles.banner} src={bannerUrl} /> : null}
-
-            <View style={styles.metaRow}>
-              <Text style={styles.cardId}>Card ID: {card.id}</Text>
-              <Text style={styles.cardId}>5×5 • Center is FREE</Text>
-            </View>
+            {bannerUrl ? <Image src={bannerUrl} style={styles.banner} /> : null}
+            <Text style={styles.title}>{packTitle}</Text>
+            <Text style={styles.subtitle}>Sponsor: {sponsorName}</Text>
           </View>
+
+          <Text style={styles.cardId}>Card ID: {card.id}</Text>
 
           <View style={styles.grid}>
             {card.grid.map((row, rIdx) => (
               <View key={rIdx} style={styles.row}>
                 {row.map((cell, cIdx) => {
-                  const isLastCol = cIdx === 4;
-                  const isLastRow = rIdx === 4;
-                  const isFree = cell.text === "FREE";
+                  const isFree = cell === "FREE";
 
-                  // IMPORTANT: no undefined/null in the style array
-                  const styleArr: any[] = [styles.cell];
-                  if (isLastCol) styleArr.push(styles.cellLastCol);
-                  if (isLastRow) styleArr.push(styles.lastRowCell);
-                  if (isFree) styleArr.push(styles.freeCell);
+                  // ✅ IMPORTANT: only push real style objects (no null/undefined)
+                  const cellStyles: any[] = [styles.cellBase];
+                  if (cIdx === 4) cellStyles.push(styles.lastCol);
+                  if (rIdx === 4) cellStyles.push(styles.lastRow);
+                  if (isFree) cellStyles.push(styles.freeCell);
 
                   return (
-                    <View key={cIdx} style={styleArr}>
-                      {isFree && logoUrl ? <Image style={styles.freeLogo} src={logoUrl} /> : null}
-                      <Text style={styles.cellText}>{cell.text}</Text>
+                    <View key={cIdx} style={cellStyles}>
+                      {isFree ? (
+                        <>
+                          {logoUrl ? <Image src={logoUrl} style={styles.freeLogo} /> : null}
+                          <Text style={styles.freeLabel}>{sponsorName}</Text>
+                        </>
+                      ) : (
+                        <Text style={styles.cellText}>{cell}</Text>
+                      )}
                     </View>
                   );
                 })}
               </View>
             ))}
           </View>
-
-          <Text style={styles.footer}>
-            Verification: Screenshot your card with your Card ID visible when you claim bingo.
-          </Text>
         </Page>
       ))}
     </Document>
