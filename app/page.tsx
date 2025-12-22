@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 type GeneratedPack = {
   packTitle: string;
   sponsorName: string;
-  pdfBase64: string; // base64 string (no data: prefix)
+  pdfBase64: string; // base64 string (no data: prefix expected)
   csv: string; // raw CSV text
   createdAt: number;
   requestKey: string;
@@ -13,20 +13,21 @@ type GeneratedPack = {
 
 type SponsorSkin = {
   id: string; // local-only id
-  label: string; // display name
+  label: string; // "Joe's Grows", "Sponsor X"
   bannerUrl: string;
   logoUrl: string;
 };
 
 const SKINS_KEY = "grower-bingo:sponsor-skins:v1";
-const FORM_KEY = "grower-bingo:form:v2"; // bump version to avoid old bad saved values
+// IMPORTANT: bump this version to auto-reset any corrupted saved qty/items on phones
+const FORM_KEY = "grower-bingo:form:v2";
 
 type FormState = {
   packTitle: string;
   sponsorName: string;
   bannerUrl: string;
   logoUrl: string;
-  qty: string; // keep as string for mobile
+  qty: string; // keep as string
   items: string;
   selectedSkinId: string;
   newSkinLabel: string;
@@ -62,13 +63,6 @@ function normalizeLines(text: string) {
     .filter(Boolean);
 }
 
-// SUPER robust qty parsing
-function parseQty(raw: unknown): number {
-  const s = String(raw ?? "").replace(/[^\d]/g, ""); // digits only
-  const n = Number.parseInt(s, 10);
-  return Number.isFinite(n) ? n : NaN;
-}
-
 function buildRequestKey(payload: {
   packTitle: string;
   sponsorName: string;
@@ -95,13 +89,22 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    throw new Error(text || `Server returned empty response (HTTP ${res.status}).`);
+    throw new Error(text || `Server returned an empty response (HTTP ${res.status}).`);
   }
 
   if (!res.ok) {
     throw new Error(data?.error || data?.message || `Request failed (HTTP ${res.status}).`);
   }
+
   return data;
+}
+
+// ✅ Bulletproof qty parsing: strips hidden chars/spaces/etc.
+// "25", " 25 ", "25\n", "25.0", "25 " -> 25
+function parseQty(raw: string): number {
+  const digitsOnly = (raw || "").toString().replace(/[^\d]/g, "");
+  if (!digitsOnly) return NaN;
+  return Number.parseInt(digitsOnly, 10);
 }
 
 export default function HomePage() {
@@ -116,12 +119,11 @@ export default function HomePage() {
   const [err, setErr] = useState<string | null>(null);
   const [pack, setPack] = useState<GeneratedPack | null>(null);
 
-  // Sponsor skins
   const [skins, setSkins] = useState<SponsorSkin[]>([]);
   const [selectedSkinId, setSelectedSkinId] = useState<string>("");
   const [newSkinLabel, setNewSkinLabel] = useState<string>("");
 
-  // Load skins
+  // Load skins from localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SKINS_KEY);
@@ -131,14 +133,14 @@ export default function HomePage() {
     } catch {}
   }, []);
 
-  // Save skins
+  // Persist skins
   useEffect(() => {
     try {
       localStorage.setItem(SKINS_KEY, JSON.stringify(skins));
     } catch {}
   }, [skins]);
 
-  // Load form (persist inputs)
+  // Load form from localStorage (survive refresh / leaving app)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(FORM_KEY);
@@ -149,18 +151,14 @@ export default function HomePage() {
       if (typeof f.sponsorName === "string") setSponsorName(f.sponsorName);
       if (typeof f.bannerUrl === "string") setBannerUrl(f.bannerUrl);
       if (typeof f.logoUrl === "string") setLogoUrl(f.logoUrl);
-
-      // IMPORTANT: sanitize qty coming from storage
-      const q = parseQty(f.qty);
-      setQty(Number.isFinite(q) ? String(q) : "25");
-
+      if (typeof f.qty === "string") setQty(f.qty);
       if (typeof f.items === "string") setItems(f.items);
       if (typeof f.selectedSkinId === "string") setSelectedSkinId(f.selectedSkinId);
       if (typeof f.newSkinLabel === "string") setNewSkinLabel(f.newSkinLabel);
     } catch {}
   }, []);
 
-  // Persist form
+  // Persist form whenever it changes
   useEffect(() => {
     try {
       const form: FormState = {
@@ -177,23 +175,16 @@ export default function HomePage() {
     } catch {}
   }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, items, selectedSkinId, newSkinLabel]);
 
-  // Clear any old error once user edits anything
-  useEffect(() => {
-    if (err) setErr(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, items]);
-
   const itemsList = useMemo(() => normalizeLines(items), [items]);
-  const itemsCount = itemsList.length;
 
   const currentRequestKey = useMemo(() => {
-    const q = parseQty(qty);
+    const qtyNum = parseQty(qty);
     return buildRequestKey({
       packTitle: packTitle.trim(),
       sponsorName: sponsorName.trim(),
       bannerUrl: bannerUrl.trim(),
       logoUrl: logoUrl.trim(),
-      qty: Number.isFinite(q) ? q : 0,
+      qty: Number.isFinite(qtyNum) ? qtyNum : 0,
       items: itemsList,
     });
   }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, itemsList]);
@@ -204,6 +195,7 @@ export default function HomePage() {
     setSelectedSkinId(id);
     const skin = skins.find((s) => s.id === id);
     if (!skin) return;
+
     setSponsorName(skin.label);
     setBannerUrl(skin.bannerUrl);
     setLogoUrl(skin.logoUrl);
@@ -211,17 +203,20 @@ export default function HomePage() {
 
   function saveCurrentAsSkin() {
     setErr(null);
+
     const label = (newSkinLabel || sponsorName || "Sponsor").trim();
     if (!label) {
       setErr("Enter a sponsor name (or a Skin label) first.");
       return;
     }
+
     const skin: SponsorSkin = {
       id: makeLocalId(),
       label,
       bannerUrl: bannerUrl.trim(),
       logoUrl: logoUrl.trim(),
     };
+
     setSkins((prev) => [skin, ...prev]);
     setSelectedSkinId(skin.id);
     setNewSkinLabel("");
@@ -248,6 +243,7 @@ export default function HomePage() {
       setErr(`Need at least 24 square items (you have ${itemsArr.length}).`);
       return null;
     }
+
     return { qtyNum, itemsArr };
   }
 
@@ -312,8 +308,8 @@ export default function HomePage() {
   }
 
   async function onGenerateAndDownloadPdf() {
-    setBusy(true);
     setErr(null);
+    setBusy(true);
     try {
       const p = await generatePack();
       downloadPdfFromPack(p);
@@ -344,17 +340,9 @@ export default function HomePage() {
   }
 
   return (
-    <main
-      style={{
-        maxWidth: 740,
-        margin: "0 auto",
-        padding: 16,
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-      }}
-    >
-      <h1 style={{ fontSize: 30, fontWeight: 800, marginBottom: 12 }}>Grower Bingo Generator</h1>
+    <main style={{ maxWidth: 740, margin: "0 auto", padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Grower Bingo Generator</h1>
 
-      {/* Skin controls */}
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <select
@@ -408,71 +396,48 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Form */}
       <section style={{ display: "grid", gap: 12 }}>
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700 }}>Pack title</span>
-          <input
-            value={packTitle}
-            onChange={(e) => setPackTitle(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-          />
+          <span style={{ fontWeight: 600 }}>Pack title</span>
+          <input value={packTitle} onChange={(e) => setPackTitle(e.target.value)} style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700 }}>Sponsor name</span>
-          <input
-            value={sponsorName}
-            onChange={(e) => setSponsorName(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-          />
+          <span style={{ fontWeight: 600 }}>Sponsor name</span>
+          <input value={sponsorName} onChange={(e) => setSponsorName(e.target.value)} style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700 }}>Banner image URL (top banner)</span>
-          <input
-            value={bannerUrl}
-            onChange={(e) => setBannerUrl(e.target.value)}
-            placeholder="https://…"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-          />
+          <span style={{ fontWeight: 600 }}>Banner image URL (top banner)</span>
+          <input value={bannerUrl} onChange={(e) => setBannerUrl(e.target.value)} placeholder="https://…" style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700 }}>Sponsor logo URL (FREE center square)</span>
-          <input
-            value={logoUrl}
-            onChange={(e) => setLogoUrl(e.target.value)}
-            placeholder="https://…"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-          />
+          <span style={{ fontWeight: 600 }}>Sponsor logo URL (FREE center square)</span>
+          <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…" style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700 }}>Quantity (1–500)</span>
+          <span style={{ fontWeight: 600 }}>Quantity (1–500)</span>
+          {/* Use text + numeric keyboard to avoid mobile weirdness */}
           <input
             value={qty}
-            onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ""))}
+            onChange={(e) => setQty(e.target.value)}
             inputMode="numeric"
+            pattern="[0-9]*"
             placeholder="25"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", width: 180 }}
+            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", width: 200 }}
           />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700 }}>
-            Square pool items (one per line — need 24+). Current: {itemsCount}
+          <span style={{ fontWeight: 600 }}>
+            Square pool items (one per line — need 24+). Current: {itemsList.length}
           </span>
           <textarea
             value={items}
             onChange={(e) => setItems(e.target.value)}
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #ccc",
-              minHeight: 220,
-              fontFamily: "monospace",
-            }}
+            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", minHeight: 260, fontFamily: "monospace" }}
             placeholder={"Example:\nTrellis net\npH swing\nCal-Mag\n..."}
           />
         </label>
@@ -483,18 +448,11 @@ export default function HomePage() {
           </div>
         ) : null}
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
             onClick={onGenerateAndDownloadPdf}
             disabled={busy}
-            style={{
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid #111",
-              background: "#111",
-              color: "white",
-              opacity: busy ? 0.6 : 1,
-            }}
+            style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #111", background: "#111", color: "#fff", opacity: busy ? 0.6 : 1 }}
           >
             {busy ? "Generating..." : "Generate + Download PDF"}
           </button>
@@ -502,14 +460,7 @@ export default function HomePage() {
           <button
             onClick={onDownloadCsvRoster}
             disabled={busy}
-            style={{
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid #111",
-              background: "white",
-              color: "#111",
-              opacity: busy ? 0.6 : 1,
-            }}
+            style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #111", background: "#fff", color: "#111", opacity: busy ? 0.6 : 1 }}
           >
             Download CSV (Roster)
           </button>
@@ -523,4 +474,4 @@ export default function HomePage() {
       </section>
     </main>
   );
-      }
+}
