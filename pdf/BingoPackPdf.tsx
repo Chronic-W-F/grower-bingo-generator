@@ -1,114 +1,44 @@
-// pdf/BingoPackPdf.tsx
-import React from "react";
-import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
-
-export type BingoGrid = string[][];
-export type BingoCard = { id: string; grid: BingoGrid };
-
-export type BingoPack = {
-  packTitle: string;
-  sponsorName: string;
-  bannerUrl?: string;
-  logoUrl?: string;
-  cards: BingoCard[];
-};
-
-const styles = StyleSheet.create({
-  page: { padding: 24, fontSize: 10 },
-  headerWrap: { marginBottom: 10 },
-  headerBar: { backgroundColor: "#000", padding: 8, borderRadius: 6 },
-  headerTitle: { color: "#fff", fontSize: 14, fontWeight: "bold" as const },
-  headerSponsor: { color: "#ddd", fontSize: 9 },
-
-  cardIdRow: {
-    flexDirection: "row" as const,
-    justifyContent: "space-between" as const,
-    marginBottom: 6,
-  },
-
-  grid: { borderWidth: 1, borderColor: "#333" },
-  row: { flexDirection: "row" as const },
-
-  cell: {
-    flex: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: "#333",
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    height: 48,
-    padding: 2,
-  },
-
-  // last col/row fixes (no double border)
-  cellLastCol: { borderRightWidth: 0 },
-  cellLastRow: { borderBottomWidth: 0 },
-
-  cellText: { textAlign: "center" as const, fontSize: 9 },
-
-  freeCell: { backgroundColor: "#000" },
-  freeText: { color: "#fff", fontWeight: "bold" as const },
-
-  footer: { marginTop: 6, fontSize: 8, color: "#555" },
-});
-
-function BingoPackDoc({ pack }: { pack: BingoPack }) {
-  return (
-    <Document>
-      {pack.cards.map((card) => (
-        <Page key={card.id} size="LETTER" style={styles.page}>
-          <View style={styles.headerWrap}>
-            <View style={styles.headerBar}>
-              <Text style={styles.headerTitle}>{pack.packTitle}</Text>
-              <Text style={styles.headerSponsor}>Sponsor: {pack.sponsorName}</Text>
-            </View>
-          </View>
-
-          <View style={styles.cardIdRow}>
-            <Text>Card ID: {card.id}</Text>
-            <Text>5×5 • Center is FREE</Text>
-          </View>
-
-          <View style={styles.grid}>
-            {card.grid.map((row, rIdx) => (
-              <View key={rIdx} style={styles.row}>
-                {row.map((cell, cIdx) => {
-                  const isFree = cell === "FREE";
-
-                  // ✅ IMPORTANT: allow mixed style objects
-                  const cellStyles: any[] = [styles.cell];
-                  if (cIdx === 4) cellStyles.push(styles.cellLastCol);
-                  if (rIdx === 4) cellStyles.push(styles.cellLastRow);
-                  if (isFree) cellStyles.push(styles.freeCell);
-
-                  const textStyles: any[] = [styles.cellText];
-                  if (isFree) textStyles.push(styles.freeText);
-
-                  return (
-                    <View key={cIdx} style={cellStyles}>
-                      <Text style={textStyles}>
-                        {isFree ? `${pack.sponsorName}\nFREE` : cell}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            ))}
-          </View>
-
-          <Text style={styles.footer}>
-            Verification: Screenshot your card with Card ID visible when you claim bingo.
-          </Text>
-        </Page>
-      ))}
-    </Document>
-  );
-}
-
-/** ✅ Always return a Buffer (Vercel-safe) */
-export async function renderBingoPackPdf(pack: BingoPack): Promise<Buffer> {
-  const doc = <BingoPackDoc pack={pack} />;
-  const instance = pdf(doc);
-  const buffer = await instance.toBuffer();
-  return buffer;
-}
+02:17:20.292 Running build in Washington, D.C., USA (East) – iad1
+02:17:20.292 Build machine configuration: 2 cores, 8 GB
+02:17:20.422 Cloning github.com/Chronic-W-F/grower-bingo-generator (Branch: main, Commit: 95d147d)
+02:17:20.630 Cloning completed: 208.000ms
+02:17:21.065 Restored build cache from previous deployment (DTX9wQCSib9DZww6zoi952HePUjg)
+02:17:21.488 Running "vercel build"
+02:17:21.891 Vercel CLI 50.1.3
+02:17:22.205 Installing dependencies...
+02:17:24.276 
+02:17:24.277 up to date in 2s
+02:17:24.277 
+02:17:24.277 6 packages are looking for funding
+02:17:24.277   run `npm fund` for details
+02:17:24.310 Detected Next.js version: 14.2.35
+02:17:24.313 Running "npm run build"
+02:17:24.410 
+02:17:24.411 > build
+02:17:24.411 > next build
+02:17:24.411 
+02:17:25.049   ▲ Next.js 14.2.35
+02:17:25.050 
+02:17:25.065    Creating an optimized production build ...
+02:17:29.083  ✓ Compiled successfully
+02:17:29.084    Linting and checking validity of types ...
+02:17:29.367 
+02:17:29.369    We detected TypeScript in your project and reconfigured your tsconfig.json file for you. Strict-mode is set to false by default.
+02:17:29.369    The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
+02:17:29.369 
+02:17:29.369    	- include was updated to add '.next/types/**/*.ts'
+02:17:29.369    	- plugins was updated to add { name: 'next' }
+02:17:29.369 
+02:17:31.683 Failed to compile.
+02:17:31.683 
+02:17:31.683 ./pdf/BingoPackPdf.tsx:113:3
+02:17:31.684 Type error: Type 'ReadableStream' is missing the following properties from type 'Buffer<ArrayBufferLike>': slice, subarray, write, toJSON, and 102 more.
+02:17:31.684 
+02:17:31.684 [0m [90m 111 |[39m   [36mconst[39m instance [33m=[39m pdf(doc)[33m;[39m[0m
+02:17:31.684 [0m [90m 112 |[39m   [36mconst[39m buffer [33m=[39m [36mawait[39m instance[33m.[39mtoBuffer()[33m;[39m[0m
+02:17:31.684 [0m[31m[1m>[22m[39m[90m 113 |[39m   [36mreturn[39m buffer[33m;[39m[0m
+02:17:31.684 [0m [90m     |[39m   [31m[1m^[22m[39m[0m
+02:17:31.684 [0m [90m 114 |[39m }[0m
+02:17:31.684 [0m [90m 115 |[39m[0m
+02:17:31.701 Next.js build worker exited with code: 1 and signal: null
+02:17:31.719 Error: Command "npm run build" exited with 1
