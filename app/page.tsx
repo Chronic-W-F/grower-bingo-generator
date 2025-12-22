@@ -5,10 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 type GeneratedPack = {
   packTitle: string;
   sponsorName: string;
-  pdfBase64: string; // base64 string (no data: prefix)
+  pdfBase64: string; // base64 string (no data: prefix expected)
   csv: string; // raw CSV text
   createdAt: number;
-  requestKey: string; // used to prevent mismatched PDF/CSV downloads
+  requestKey: string;
 };
 
 type SponsorSkin = {
@@ -26,7 +26,7 @@ type FormState = {
   sponsorName: string;
   bannerUrl: string;
   logoUrl: string;
-  qty: string; // keep as string to avoid mobile empty-input issues
+  qty: string; // keep as string to avoid mobile empty input issues
   items: string;
   selectedSkinId: string;
   newSkinLabel: string;
@@ -105,7 +105,7 @@ export default function HomePage() {
   const [sponsorName, setSponsorName] = useState("Joe’s Grows");
   const [bannerUrl, setBannerUrl] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
-  const [qty, setQty] = useState<string>("25");
+  const [qty, setQty] = useState<string>("25"); // <-- string on purpose
   const [items, setItems] = useState<string>("");
 
   const [busy, setBusy] = useState(false);
@@ -179,8 +179,6 @@ export default function HomePage() {
   }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, items, selectedSkinId, newSkinLabel]);
 
   const itemsList = useMemo(() => normalizeLines(items), [items]);
-
-  const itemsCount = useMemo(() => itemsList.length, [itemsList]);
 
   // If user changes inputs after generating, we consider the pack "stale"
   const currentRequestKey = useMemo(() => {
@@ -341,7 +339,7 @@ export default function HomePage() {
       return;
     }
 
-    // If no pack yet (or inputs changed), generate once first
+    // If no pack yet (or inputs changed), force generate once first
     setBusy(true);
     try {
       const p = await generatePack();
@@ -362,30 +360,16 @@ export default function HomePage() {
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
       }}
     >
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
-        Grower Bingo Generator
-      </h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Grower Bingo Generator</h1>
 
       {/* Skin controls */}
-      <section
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          padding: 12,
-          marginBottom: 16,
-        }}
-      >
+      <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <select
               value={selectedSkinId}
               onChange={(e) => applySkin(e.target.value)}
-              style={{
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ccc",
-                minWidth: 220,
-              }}
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc", minWidth: 220 }}
             >
               <option value="">Select a saved skin…</option>
               {skins.map((s) => (
@@ -399,12 +383,7 @@ export default function HomePage() {
               value={newSkinLabel}
               onChange={(e) => setNewSkinLabel(e.target.value)}
               placeholder="Skin label (optional)"
-              style={{
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ccc",
-                minWidth: 200,
-              }}
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc", minWidth: 200 }}
             />
           </div>
 
@@ -483,22 +462,22 @@ export default function HomePage() {
 
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>Quantity (1–500)</span>
+
+          {/* IMPORTANT: keep qty as STRING; on mobile, number inputs often emit "" temporarily */}
           <input
+            type="number"
             inputMode="numeric"
+            min={1}
+            max={500}
             value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #ccc",
-              width: 180,
-            }}
+            onChange={(e) => setQty(e.target.value)} // <-- FIX: DO NOT Number(...) here
+            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", width: 180 }}
           />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>
-            Square pool items (one per line — need 24+). Current: <b>{itemsCount}</b>
+            Square pool items (one per line — need 24+). Current: {itemsList.length}
           </span>
           <textarea
             value={items}
@@ -509,9 +488,8 @@ export default function HomePage() {
               border: "1px solid #ccc",
               minHeight: 240,
               fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              fontSize: 14,
             }}
-            placeholder={"Example:\nDeep Water Culture\nPH swing\nCal-Mag\n..."}
+            placeholder={"Example:\nTrellis net\nLollipop\nDefoliate\n..."}
           />
         </label>
 
@@ -521,7 +499,7 @@ export default function HomePage() {
           </div>
         ) : null}
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
           <button
             onClick={onGenerateAndDownloadPdf}
             disabled={busy}
@@ -534,7 +512,7 @@ export default function HomePage() {
               cursor: busy ? "not-allowed" : "pointer",
             }}
           >
-            {busy ? "Generating…" : "Generate + Download PDF"}
+            {busy ? "Generating..." : "Generate + Download PDF"}
           </button>
 
           <button
@@ -545,7 +523,6 @@ export default function HomePage() {
               borderRadius: 999,
               border: "1px solid #ccc",
               background: "#fff",
-              color: "#000",
               cursor: busy ? "not-allowed" : "pointer",
             }}
           >
@@ -556,7 +533,7 @@ export default function HomePage() {
         {pack ? (
           <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
             Last generated: <b>{pack.packTitle}</b> — {new Date(pack.createdAt).toLocaleString()}
-            {!packIsFresh ? " (inputs changed — will re-generate next download)" : ""}
+            {!packIsFresh ? " (inputs changed since generation)" : ""}
           </div>
         ) : null}
       </section>
