@@ -14,26 +14,28 @@ function normalizeLines(v: unknown) {
     .filter(Boolean);
 }
 
-async function toArrayBufferMaybe(
-  input: unknown
-): Promise<ArrayBuffer> {
+async function toArrayBufferLike(input: unknown): Promise<ArrayBufferLike> {
   // Buffer
   if (typeof Buffer !== "undefined" && Buffer.isBuffer(input)) {
+    const b = input as Buffer;
+    // Buffer.buffer can be ArrayBuffer or SharedArrayBuffer depending on TS/lib
+    return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+  }
+
+  // ArrayBuffer
+  if (input instanceof ArrayBuffer) return input;
+
+  // Uint8Array (and friends)
+  if (input instanceof Uint8Array) {
     return input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength);
   }
 
-  // Uint8Array / ArrayBuffer
-  if (input instanceof ArrayBuffer) return input;
-  if (input instanceof Uint8Array) return input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength);
-
-  // ReadableStream (what you're hitting)
-  // new Response(stream).arrayBuffer() works in Node runtimes that include fetch/web streams (Next does)
+  // ReadableStream
   if (input && typeof (input as any).getReader === "function") {
-    const ab = await new Response(input as any).arrayBuffer();
-    return ab;
+    return await new Response(input as any).arrayBuffer();
   }
 
-  // Fallback: if it’s already a Response-like
+  // Response-like / Blob-like
   if (input && typeof (input as any).arrayBuffer === "function") {
     return await (input as any).arrayBuffer();
   }
@@ -48,17 +50,14 @@ export async function POST(req: Request) {
     const packTitle = String(body.packTitle ?? "Grower Bingo").trim();
     const sponsorName = String(body.sponsorName ?? "Sponsor").trim();
 
-    const bannerUrlRaw = body.bannerUrl;
-    const logoUrlRaw = body.logoUrl;
-
     const bannerUrl =
-      typeof bannerUrlRaw === "string" && bannerUrlRaw.trim()
-        ? bannerUrlRaw.trim()
+      typeof body.bannerUrl === "string" && body.bannerUrl.trim()
+        ? body.bannerUrl.trim()
         : undefined;
 
     const logoUrl =
-      typeof logoUrlRaw === "string" && logoUrlRaw.trim()
-        ? logoUrlRaw.trim()
+      typeof body.logoUrl === "string" && body.logoUrl.trim()
+        ? body.logoUrl.trim()
         : undefined;
 
     const qty = Number.parseInt(String(body.qty ?? "25"), 10);
@@ -86,16 +85,17 @@ export async function POST(req: Request) {
       logoUrl,
       cards: generated.cards.map((c) => ({
         id: c.id,
-        grid: c.grid, // expects string[][]
+        grid: c.grid, // string[][]
       })),
     };
 
-    // ✅ render PDF (stream or bytes depending on implementation)
+    // PDF (often a ReadableStream)
     const pdfOut = await renderBingoPackPdf(pack);
 
-    // ✅ convert to bytes
-    const ab = await toArrayBufferMaybe(pdfOut);
-    const pdfBase64 = Buffer.from(new Uint8Array(ab)).toString("base64");
+    // Convert to bytes safely
+    const abLike = await toArrayBufferLike(pdfOut);
+    const bytes = new Uint8Array(abLike as ArrayBuffer);
+    const pdfBase64 = Buffer.from(bytes).toString("base64");
 
     // roster CSV
     const csvLines = ["card_id"];
