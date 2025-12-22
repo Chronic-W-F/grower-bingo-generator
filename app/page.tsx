@@ -62,15 +62,14 @@ function normalizeLines(text: string) {
     .filter(Boolean);
 }
 
-// Keep ONLY digits (mobile sometimes inserts invisible chars, spaces, etc.)
+// Digits-only sanitizer (Android keyboards can inject invisible junk)
 function digitsOnly(v: unknown) {
-  const s = String(v ?? "");
-  return s.replace(/[^\d]/g, "");
+  return String(v ?? "").replace(/[^\d]/g, "");
 }
 
 function parseQty(v: unknown) {
   const cleaned = digitsOnly(v);
-  const n = Number.parseInt(cleaned, 10);
+  const n = cleaned ? Number.parseInt(cleaned, 10) : NaN;
   return { cleaned, n };
 }
 
@@ -109,7 +108,7 @@ export default function HomePage() {
   const [bannerUrl, setBannerUrl] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
 
-  // Store qty as string, but keep it digits-only
+  // keep as string (controlled input), but store DIGITS ONLY always
   const [qty, setQty] = useState<string>("25");
 
   const [items, setItems] = useState<string>("");
@@ -139,7 +138,7 @@ export default function HomePage() {
     } catch {}
   }, [skins]);
 
-  // Load form
+  // Load form (IMPORTANT: do NOT force empty back to 25)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(FORM_KEY);
@@ -152,12 +151,17 @@ export default function HomePage() {
       if (typeof f.bannerUrl === "string") setBannerUrl(f.bannerUrl);
       if (typeof f.logoUrl === "string") setLogoUrl(f.logoUrl);
 
-      // qty might be string OR number OR junk
       if (f.qty !== undefined) {
         const { cleaned, n } = parseQty(f.qty);
-        // If it’s unusable, fall back to "25"
-        if (Number.isFinite(n) && n > 0) setQty(String(n));
-        else setQty(cleaned || "25");
+
+        // If user previously left it blank, keep it blank
+        if (cleaned === "") {
+          setQty("");
+        } else if (Number.isFinite(n)) {
+          setQty(String(n));
+        } else {
+          setQty("25");
+        }
       }
 
       if (typeof f.items === "string") setItems(f.items);
@@ -185,11 +189,11 @@ export default function HomePage() {
 
   const itemsList = useMemo(() => normalizeLines(items), [items]);
 
-  // For display/debug only
-  const { cleaned: qtyCleaned, n: qtyParsed } = useMemo(() => parseQty(qty), [qty]);
+  // Always parse from current qty string
+  const { cleaned: qtyCleaned, n: qtyNumParsed } = useMemo(() => parseQty(qty), [qty]);
 
   const currentRequestKey = useMemo(() => {
-    const safeQty = Number.isFinite(qtyParsed) ? qtyParsed : 0;
+    const safeQty = Number.isFinite(qtyNumParsed) ? qtyNumParsed : 0;
     return buildRequestKey({
       packTitle: packTitle.trim(),
       sponsorName: sponsorName.trim(),
@@ -198,7 +202,7 @@ export default function HomePage() {
       qty: safeQty,
       items: itemsList,
     });
-  }, [packTitle, sponsorName, bannerUrl, logoUrl, qtyParsed, itemsList]);
+  }, [packTitle, sponsorName, bannerUrl, logoUrl, qtyNumParsed, itemsList]);
 
   const packIsFresh = pack?.requestKey === currentRequestKey;
 
@@ -243,16 +247,17 @@ export default function HomePage() {
       localStorage.removeItem(FORM_KEY);
       localStorage.removeItem(SKINS_KEY);
     } catch {}
-    // Reset state
+
+    // reset state
     setPackTitle("Harvest Heroes Bingo");
     setSponsorName("Joe’s Grows");
     setBannerUrl("");
     setLogoUrl("");
     setQty("25");
     setItems("");
+    setSkins([]);
     setSelectedSkinId("");
     setNewSkinLabel("");
-    setSkins([]);
     setPack(null);
     setErr(null);
   }
@@ -260,11 +265,10 @@ export default function HomePage() {
   function validateInputs(): { qtyNum: number; itemsArr: string[] } | null {
     setErr(null);
 
-    // IMPORTANT: re-parse qty RIGHT NOW (no stale memo / weird mobile timing)
-    const { cleaned, n } = parseQty(qty);
+    const qtyNum = qtyNumParsed;
 
-    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 500) {
-      setErr(`Quantity must be between 1 and 500. (raw="${String(qty)}" cleaned="${cleaned}" parsed="${String(n)}")`);
+    if (!Number.isFinite(qtyNum) || !Number.isInteger(qtyNum) || qtyNum < 1 || qtyNum > 500) {
+      setErr("Quantity must be between 1 and 500.");
       return null;
     }
 
@@ -274,7 +278,7 @@ export default function HomePage() {
       return null;
     }
 
-    return { qtyNum: n, itemsArr };
+    return { qtyNum, itemsArr };
   }
 
   async function generatePack(): Promise<GeneratedPack> {
@@ -370,19 +374,28 @@ export default function HomePage() {
   }
 
   return (
-    <main
-      style={{
-        maxWidth: 740,
-        margin: "0 auto",
-        padding: 16,
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-      }}
-    >
+    <main style={{ maxWidth: 740, margin: "0 auto", padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Grower Bingo Generator</h1>
 
-      {/* REAL DEBUG LINE */}
+      <button
+        onClick={clearSavedSettings}
+        disabled={busy}
+        style={{
+          padding: "10px 14px",
+          borderRadius: 999,
+          border: "1px solid #b00020",
+          color: "#b00020",
+          background: "#fff",
+          marginBottom: 12,
+          cursor: busy ? "not-allowed" : "pointer",
+        }}
+      >
+        Clear saved settings
+      </button>
+
+      {/* REAL debug that actually evaluates */}
       <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 10 }}>
-        Debug qty: raw=<b>{String(qty)}</b> cleaned=<b>{qtyCleaned}</b> parsed=<b>{String(qtyParsed)}</b>
+        Debug qty: raw=<b>{JSON.stringify(qty)}</b> cleaned=<b>{JSON.stringify(qtyCleaned)}</b> parsed=<b>{String(qtyNumParsed)}</b>
       </div>
 
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginBottom: 16 }}>
@@ -435,21 +448,6 @@ export default function HomePage() {
           >
             Delete selected skin
           </button>
-
-          <button
-            onClick={clearSavedSettings}
-            disabled={busy}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 999,
-              border: "1px solid #cc0000",
-              background: "#fff",
-              color: "#cc0000",
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
-          >
-            Clear saved settings
-          </button>
         </div>
       </section>
 
@@ -477,6 +475,9 @@ export default function HomePage() {
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>Quantity (1–500)</span>
           <input
+            type="number"
+            min={1}
+            max={500}
             inputMode="numeric"
             value={qty}
             onChange={(e) => setQty(digitsOnly(e.target.value))}
