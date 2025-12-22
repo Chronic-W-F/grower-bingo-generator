@@ -19,15 +19,14 @@ type SponsorSkin = {
 };
 
 const SKINS_KEY = "grower-bingo:sponsor-skins:v1";
-// IMPORTANT: bump this version to auto-reset any corrupted saved qty/items on phones
-const FORM_KEY = "grower-bingo:form:v2";
+const FORM_KEY = "grower-bingo:form:v1";
 
 type FormState = {
   packTitle: string;
   sponsorName: string;
   bannerUrl: string;
   logoUrl: string;
-  qty: string; // keep as string
+  qty: string; // keep as string to avoid mobile empty input issues
   items: string;
   selectedSkinId: string;
   newSkinLabel: string;
@@ -53,7 +52,9 @@ function safeFileName(s: string) {
 }
 
 function makeLocalId() {
-  return Math.random().toString(36).slice(2, 10) + "-" + Date.now().toString(36);
+  return (
+    Math.random().toString(36).slice(2, 10) + "-" + Date.now().toString(36)
+  );
 }
 
 function normalizeLines(text: string) {
@@ -71,6 +72,7 @@ function buildRequestKey(payload: {
   qty: number;
   items: string[];
 }) {
+  // stable-ish key used to prevent mismatched PDF/CSV
   return JSON.stringify({
     packTitle: payload.packTitle,
     sponsorName: payload.sponsorName,
@@ -89,58 +91,92 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    throw new Error(text || `Server returned an empty response (HTTP ${res.status}).`);
+    throw new Error(
+      text || `Server returned an empty / non-JSON response (HTTP ${res.status}).`
+    );
   }
 
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `Request failed (HTTP ${res.status}).`);
+    throw new Error(
+      data?.error || data?.message || `Request failed (HTTP ${res.status}).`
+    );
   }
 
   return data;
 }
 
-// ✅ Bulletproof qty parsing: strips hidden chars/spaces/etc.
-// "25", " 25 ", "25\n", "25.0", "25 " -> 25
-function parseQty(raw: string): number {
-  const digitsOnly = (raw || "").toString().replace(/[^\d]/g, "");
-  if (!digitsOnly) return NaN;
-  return Number.parseInt(digitsOnly, 10);
-}
-
 export default function HomePage() {
+  // Defaults
   const [packTitle, setPackTitle] = useState("Harvest Heroes Bingo");
   const [sponsorName, setSponsorName] = useState("Joe’s Grows");
   const [bannerUrl, setBannerUrl] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+
+  // IMPORTANT: qty is string (mobile-safe)
   const [qty, setQty] = useState<string>("25");
-  const [items, setItems] = useState<string>("");
+
+  // Default 25 test items included
+  const [items, setItems] = useState<string>(
+    [
+      "Trellis net",
+      "Lollipop",
+      "Defoliate",
+      "Stretch week",
+      "Dryback",
+      "Runoff EC",
+      "VPD off",
+      "Heat stress",
+      "Herm watch",
+      "Foxtails",
+      "Amber trichomes",
+      "Cloudy trichomes",
+      "Flush debate",
+      "Leaf taco",
+      "Stunted growth",
+      "Light burn",
+      "Cal-Mag",
+      "pH swing",
+      "Overwatered",
+      "Underwatered",
+      "Powdery mildew",
+      "Fungus gnats",
+      "Bud rot",
+      "Nute lockout",
+      "Late flower fade",
+    ].join("\n")
+  );
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pack, setPack] = useState<GeneratedPack | null>(null);
 
+  // Sponsor skins
   const [skins, setSkins] = useState<SponsorSkin[]>([]);
   const [selectedSkinId, setSelectedSkinId] = useState<string>("");
   const [newSkinLabel, setNewSkinLabel] = useState<string>("");
 
-  // Load skins from localStorage
+  // Load skins
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SKINS_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) setSkins(parsed);
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, []);
 
   // Persist skins
   useEffect(() => {
     try {
       localStorage.setItem(SKINS_KEY, JSON.stringify(skins));
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, [skins]);
 
-  // Load form from localStorage (survive refresh / leaving app)
+  // Load form
   useEffect(() => {
     try {
       const raw = localStorage.getItem(FORM_KEY);
@@ -155,10 +191,13 @@ export default function HomePage() {
       if (typeof f.items === "string") setItems(f.items);
       if (typeof f.selectedSkinId === "string") setSelectedSkinId(f.selectedSkinId);
       if (typeof f.newSkinLabel === "string") setNewSkinLabel(f.newSkinLabel);
-    } catch {}
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist form whenever it changes
+  // Persist form
   useEffect(() => {
     try {
       const form: FormState = {
@@ -172,19 +211,25 @@ export default function HomePage() {
         newSkinLabel,
       };
       localStorage.setItem(FORM_KEY, JSON.stringify(form));
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, items, selectedSkinId, newSkinLabel]);
 
   const itemsList = useMemo(() => normalizeLines(items), [items]);
+  const itemsCount = itemsList.length;
 
+  // current request key so we don't mismatch PDF/CSV
   const currentRequestKey = useMemo(() => {
-    const qtyNum = parseQty(qty);
+    const qtyNum = parseInt((qty || "").trim(), 10);
+    const safeQty = Number.isFinite(qtyNum) ? qtyNum : 0;
+
     return buildRequestKey({
       packTitle: packTitle.trim(),
       sponsorName: sponsorName.trim(),
       bannerUrl: bannerUrl.trim(),
       logoUrl: logoUrl.trim(),
-      qty: Number.isFinite(qtyNum) ? qtyNum : 0,
+      qty: safeQty,
       items: itemsList,
     });
   }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, itemsList]);
@@ -232,7 +277,8 @@ export default function HomePage() {
   function validateInputs(): { qtyNum: number; itemsArr: string[] } | null {
     setErr(null);
 
-    const qtyNum = parseQty(qty);
+    // ✅ Mobile-safe: parse here, NOT in onChange
+    const qtyNum = parseInt((qty || "").trim(), 10);
     if (!Number.isFinite(qtyNum) || qtyNum < 1 || qtyNum > 500) {
       setErr("Quantity must be between 1 and 500.");
       return null;
@@ -278,8 +324,12 @@ export default function HomePage() {
     const pdfBase64 = data?.pdfBase64;
     const csv = data?.csv;
 
-    if (typeof pdfBase64 !== "string" || !pdfBase64) throw new Error("Server did not return pdfBase64.");
-    if (typeof csv !== "string") throw new Error("Server did not return csv.");
+    if (typeof pdfBase64 !== "string" || !pdfBase64) {
+      throw new Error("Server did not return pdfBase64.");
+    }
+    if (typeof csv !== "string") {
+      throw new Error("Server did not return csv.");
+    }
 
     const newPack: GeneratedPack = {
       packTitle: payload.packTitle,
@@ -340,105 +390,187 @@ export default function HomePage() {
   }
 
   return (
-    <main style={{ maxWidth: 740, margin: "0 auto", padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Grower Bingo Generator</h1>
+    <main
+      style={{
+        maxWidth: 740,
+        margin: "0 auto",
+        padding: 16,
+        fontFamily:
+          "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+      }}
+    >
+      <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 12 }}>
+        Grower Bingo Generator
+      </h1>
 
-      <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginBottom: 16 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <select
-            value={selectedSkinId}
-            onChange={(e) => applySkin(e.target.value)}
-            style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc", minWidth: 220 }}
-          >
-            <option value="">Select a saved skin…</option>
-            {skins.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-
-          <input
-            value={newSkinLabel}
-            onChange={(e) => setNewSkinLabel(e.target.value)}
-            placeholder="Skin label (optional)"
-            style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc", minWidth: 200 }}
-          />
-
-          <button
-            onClick={saveCurrentAsSkin}
-            disabled={busy}
+      {/* Skin controls */}
+      <section
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          padding: 12,
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div
             style={{
-              padding: "10px 14px",
-              borderRadius: 999,
-              border: "1px solid #000",
-              background: "#000",
-              color: "#fff",
-              cursor: busy ? "not-allowed" : "pointer",
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "center",
+              flex: "1 1 auto",
             }}
           >
-            Save current as skin
-          </button>
+            <select
+              value={selectedSkinId}
+              onChange={(e) => applySkin(e.target.value)}
+              style={{
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                minWidth: 220,
+              }}
+            >
+              <option value="">Select a saved skin…</option>
+              {skins.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
 
-          <button
-            onClick={deleteSelectedSkin}
-            disabled={busy || !selectedSkinId}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 999,
-              border: "1px solid #ccc",
-              background: "#fff",
-              cursor: busy || !selectedSkinId ? "not-allowed" : "pointer",
-            }}
-          >
-            Delete selected skin
-          </button>
+            <input
+              value={newSkinLabel}
+              onChange={(e) => setNewSkinLabel(e.target.value)}
+              placeholder="Skin label (optional)"
+              style={{
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                minWidth: 200,
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={saveCurrentAsSkin}
+              disabled={busy}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 999,
+                border: "1px solid #000",
+                background: "#000",
+                color: "#fff",
+                cursor: busy ? "not-allowed" : "pointer",
+              }}
+            >
+              Save current as skin
+            </button>
+
+            <button
+              onClick={deleteSelectedSkin}
+              disabled={busy || !selectedSkinId}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 999,
+                border: "1px solid #ccc",
+                background: "#fff",
+                cursor: busy || !selectedSkinId ? "not-allowed" : "pointer",
+              }}
+            >
+              Delete selected skin
+            </button>
+          </div>
         </div>
       </section>
 
+      {/* Form */}
       <section style={{ display: "grid", gap: 12 }}>
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Pack title</span>
-          <input value={packTitle} onChange={(e) => setPackTitle(e.target.value)} style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Sponsor name</span>
-          <input value={sponsorName} onChange={(e) => setSponsorName(e.target.value)} style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Banner image URL (top banner)</span>
-          <input value={bannerUrl} onChange={(e) => setBannerUrl(e.target.value)} placeholder="https://…" style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Sponsor logo URL (FREE center square)</span>
-          <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…" style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Quantity (1–500)</span>
-          {/* Use text + numeric keyboard to avoid mobile weirdness */}
+          <span style={{ fontWeight: 700 }}>Pack title</span>
           <input
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            inputMode="numeric"
-            pattern="[0-9]*"
-            placeholder="25"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", width: 200 }}
+            value={packTitle}
+            onChange={(e) => setPackTitle(e.target.value)}
+            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
           />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>
-            Square pool items (one per line — need 24+). Current: {itemsList.length}
+          <span style={{ fontWeight: 700 }}>Sponsor name</span>
+          <input
+            value={sponsorName}
+            onChange={(e) => setSponsorName(e.target.value)}
+            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 700 }}>Banner image URL (top banner)</span>
+          <input
+            value={bannerUrl}
+            onChange={(e) => setBannerUrl(e.target.value)}
+            placeholder="https://…"
+            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 700 }}>
+            Sponsor logo URL (FREE center square)
+          </span>
+          <input
+            value={logoUrl}
+            onChange={(e) => setLogoUrl(e.target.value)}
+            placeholder="https://…"
+            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 700 }}>Quantity (1–500)</span>
+
+          {/* ✅ FIXED: keep qty as string, do not Number() cast */}
+          <input
+            type="number"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            min={1}
+            max={500}
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #ccc",
+              width: 180,
+            }}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 700 }}>
+            Square pool items (one per line — need 24+). Current:{" "}
+            <b>{itemsCount}</b>
           </span>
           <textarea
             value={items}
             onChange={(e) => setItems(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", minHeight: 260, fontFamily: "monospace" }}
-            placeholder={"Example:\nTrellis net\npH swing\nCal-Mag\n..."}
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #ccc",
+              minHeight: 240,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            }}
           />
         </label>
 
@@ -452,23 +584,42 @@ export default function HomePage() {
           <button
             onClick={onGenerateAndDownloadPdf}
             disabled={busy}
-            style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #111", background: "#111", color: "#fff", opacity: busy ? 0.6 : 1 }}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid #000",
+              background: "#000",
+              color: "#fff",
+              cursor: busy ? "not-allowed" : "pointer",
+            }}
           >
-            {busy ? "Generating..." : "Generate + Download PDF"}
+            {busy ? "Generating…" : "Generate + Download PDF"}
           </button>
 
           <button
             onClick={onDownloadCsvRoster}
             disabled={busy}
-            style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #111", background: "#fff", color: "#111", opacity: busy ? 0.6 : 1 }}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid #ccc",
+              background: "#fff",
+              cursor: busy ? "not-allowed" : "pointer",
+            }}
           >
             Download CSV (Roster)
           </button>
         </div>
 
         {pack ? (
-          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
-            Last generated: <b>{pack.packTitle}</b> — {new Date(pack.createdAt).toLocaleString()}
+          <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>
+            Last generated: <b>{pack.packTitle}</b> —{" "}
+            {new Date(pack.createdAt).toLocaleString()}
+            {!packIsFresh ? (
+              <span style={{ marginLeft: 8, color: "#b00020" }}>
+                (inputs changed — will re-generate)
+              </span>
+            ) : null}
           </div>
         ) : null}
       </section>
