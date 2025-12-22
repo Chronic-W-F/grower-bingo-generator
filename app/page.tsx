@@ -197,13 +197,16 @@ export default function HomePage() {
     const validated = validateInputs();
     if (!validated) throw new Error("Invalid inputs.");
 
+    // IMPORTANT:
+    // Backend expects body.items as a STRING (textarea text), not an array.
+    // Sending array makes server think "Found 1".
     const payload = {
       packTitle: packTitle.trim(),
       sponsorName: sponsorName.trim(),
       bannerUrl: bannerUrl.trim() || null,
       logoUrl: logoUrl.trim() || null,
       qty: validated.qtyNum,
-      items: validated.itemsArr,
+      items: items, // ✅ FIX: send raw textarea string
     };
 
     const requestKey = buildRequestKey({
@@ -212,7 +215,7 @@ export default function HomePage() {
       bannerUrl: payload.bannerUrl || "",
       logoUrl: payload.logoUrl || "",
       qty: payload.qty,
-      items: payload.items,
+      items: itemsList, // fine to keep for "fresh pack" detection
     });
 
     const data = await safeJsonFetch("/api/generate", {
