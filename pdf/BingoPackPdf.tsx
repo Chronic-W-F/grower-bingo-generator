@@ -8,7 +8,6 @@ import {
   View,
   Image,
   StyleSheet,
-  Font,
   renderToBuffer,
 } from "@react-pdf/renderer";
 import type { BingoGrid } from "@/lib/bingo";
@@ -77,7 +76,6 @@ const styles = StyleSheet.create({
   },
   grid: {
     width: "100%",
-    borderTop: "0px",
   },
   row: {
     flexDirection: "row",
@@ -122,11 +120,9 @@ const styles = StyleSheet.create({
 
 function CardGrid({
   grid,
-  sponsorName,
   logoUrl,
 }: {
   grid: BingoGrid;
-  sponsorName: string;
   logoUrl: string | null;
 }) {
   const rows: BingoGrid[] = [
@@ -145,15 +141,15 @@ function CardGrid({
             const isLast = ci === 4;
             const isFree = cell === null;
 
+            // IMPORTANT: no null in style arrays (react-pdf TS types hate that)
+            const cellStyles = [
+              styles.cell,
+              ...(isLast ? [styles.cellLastInRow] : []),
+              ...(isFree ? [styles.freeCell] : []),
+            ];
+
             return (
-              <View
-                key={ci}
-                style={[
-                  styles.cell,
-                  isLast ? styles.cellLastInRow : null,
-                  isFree ? styles.freeCell : null,
-                ]}
-              >
+              <View key={ci} style={cellStyles}>
                 {isFree ? (
                   <View style={{ alignItems: "center" }}>
                     <Text style={styles.freeText}>JOE’S GROWS</Text>
@@ -178,7 +174,6 @@ function CardGrid({
 }
 
 function BingoPackPdf({ pack }: { pack: BingoPack }) {
-  // One card per page (print-friendly and simple)
   return (
     <Document>
       {pack.cards.map((card) => (
@@ -197,7 +192,7 @@ function BingoPackPdf({ pack }: { pack: BingoPack }) {
               <Text style={{ fontSize: 10, opacity: 0.8 }}>5×5 • Center is FREE</Text>
             </View>
 
-            <CardGrid grid={card.grid} sponsorName={pack.sponsorName} logoUrl={pack.logoUrl} />
+            <CardGrid grid={card.grid} logoUrl={pack.logoUrl} />
           </View>
 
           <Text style={styles.footerNote}>
@@ -209,11 +204,7 @@ function BingoPackPdf({ pack }: { pack: BingoPack }) {
   );
 }
 
-/**
- * Exported renderer used by the API route.
- * Returns a Node Buffer with the PDF bytes.
- */
 export async function renderBingoPackPdf(pack: BingoPack): Promise<Buffer> {
   const buf = await renderToBuffer(<BingoPackPdf pack={pack} />);
   return buf as Buffer;
-          }
+}
