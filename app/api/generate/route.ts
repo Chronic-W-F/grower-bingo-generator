@@ -1,62 +1,66 @@
 // app/api/generate/route.ts
 import { NextResponse } from "next/server";
-import { createBingoPackUnique } from "@/lib/bingo";
-import { renderBingoPackPdf, type BingoPack } from "@/pdf/BingoPackPdf";
+import { normalizeLines, createBingoPackUnique, type BingoPack } from "@/lib/bingo";
+import { renderBingoPackPdf } from "@/pdf/BingoPackPdf";
 
 export const runtime = "nodejs";
 
-function normalizeLines(text: unknown): string[] {
-  if (typeof text !== "string") return [];
-  return text
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+function asString(v: unknown) {
+  return typeof v === "string" ? v : "";
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const packTitle = String(body.packTitle ?? "Harvest Heroes Bingo").trim();
-    const sponsorName = String(body.sponsorName ?? "Joe’s Grows").trim();
-    const bannerUrlRaw = String(body.bannerUrl ?? "").trim();
-    const logoUrlRaw = String(body.logoUrl ?? "").trim();
+    const packTitle = asString(body.packTitle) || "Harvest Heroes Bingo";
+    const sponsorName = asString(body.sponsorName) || "Joe’s Grows";
 
+    const bannerUrlRaw = asString(body.bannerUrl).trim();
+    const logoUrlRaw = asString(body.logoUrl).trim();
     const bannerUrl = bannerUrlRaw.length ? bannerUrlRaw : undefined;
     const logoUrl = logoUrlRaw.length ? logoUrlRaw : undefined;
 
-    const qty = Number(body.quantity ?? 25);
+    const qtyNum = Number(body.qty);
+    const qty = Number.isFinite(qtyNum) ? Math.max(1, Math.min(500, Math.floor(qtyNum))) : 25;
+
+    // ✅ Mobile-safe normalization happens here (real fix for your “26 items but says <24” bug)
     const items = normalizeLines(body.items);
 
-    const generated = createBingoPackUnique(items, qty);
+    if (items.length < 24) {
+      return NextResponse.json(
+        { ok: false, error: `Need at least 24 items. Found ${items.length}.` },
+        { status: 400 }
+      );
+    }
+
+    // Create UNIQUE cards
+    const generated = createBingoPackUnique({ items, qty });
 
     const pack: BingoPack = {
       packTitle,
       sponsorName,
       bannerUrl,
       logoUrl,
-      cards: generated.cards,
+      cards: generated.cards.map((c) => ({ id: c.id, grid: c.grid })),
     };
 
     const pdfBuf = await renderBingoPackPdf(pack);
+    const pdfBase64 = Buffer.from(pdfBuf).toString("base64");
 
     // roster CSV
-    const csv = ["card_id", ...pack.cards.map((c) => c.id)].join("\n");
+    const csvLines = ["card_id"];
+    for (const c of pack.cards) csvLines.push(c.id);
+    const csv = csvLines.join("\n");
 
-    // We return JSON with base64 for PDF + CSV text, so the frontend can download both.
     return NextResponse.json({
       ok: true,
-      pdfBase64: pdfBuf.toString("base64"),
+      pdfBase64,
       csv,
-      cardCount: pack.cards.length,
+      meta: { requestedQty: qty, generatedQty: pack.cards.length },
     });
   } catch (err: any) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err?.message ?? "Unknown error",
-      },
-      { status: 400 }
-    );
+    const msg = err?.message ? String(err.message) : "Unknown error";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
