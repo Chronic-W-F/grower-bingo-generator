@@ -1,24 +1,13 @@
-// app/api/generate/route.ts
 import { NextResponse } from "next/server";
-import React from "react";
 import { renderToBuffer } from "@react-pdf/renderer";
-import BingoPackPdf from "@/pdf/BingoPackPdf";
-import { createBingoPackUnique, type BingoCard } from "@/lib/bingo";
+
+import { createBingoPack } from "@/lib/bingo";
+import BingoPackPdf, { type BingoCard } from "@/pdf/BingoPackPdf";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
-function asString(v: unknown) {
-  return typeof v === "string" ? v : "";
-}
-
-function normalizeLines(input: unknown): string[] {
-  // Accept either array of strings or a big textarea string.
-  if (Array.isArray(input)) {
-    return input.map((x) => String(x).trim()).filter(Boolean);
-  }
-  const text = String(input ?? "");
-  return text
+function normalizeLines(text: unknown) {
+  return String(text ?? "")
     .split(/\r?\n/)
     .map((x) => x.trim())
     .filter(Boolean);
@@ -28,57 +17,65 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const packTitle = asString(body.packTitle).trim() || "Harvest Heroes Bingo";
-    const sponsorName = asString(body.sponsorName).trim() || "Sponsor";
+    const packTitle = String(body?.packTitle ?? "Grower Bingo Pack").trim();
+    const sponsorName = String(body?.sponsorName ?? "Sponsor").trim();
 
-    const bannerUrlRaw = asString(body.bannerUrl).trim();
-    const logoUrlRaw = asString(body.logoUrl).trim();
-    const bannerUrl = bannerUrlRaw.length ? bannerUrlRaw : undefined;
-    const logoUrl = logoUrlRaw.length ? logoUrlRaw : undefined;
+    // allow null/undefined safely
+    const bannerUrl: string | undefined =
+      typeof body?.bannerUrl === "string" && body.bannerUrl.trim()
+        ? body.bannerUrl.trim()
+        : undefined;
 
-    const qtyNum = Number(body.qty);
-    const qty = Number.isFinite(qtyNum) ? Math.max(1, Math.min(500, Math.floor(qtyNum))) : 25;
+    const logoUrl: string | undefined =
+      typeof body?.logoUrl === "string" && body.logoUrl.trim()
+        ? body.logoUrl.trim()
+        : undefined;
 
-    const items = normalizeLines(body.items);
+    const qty = Number(body?.qty ?? 25);
+    const items = Array.isArray(body?.items)
+      ? body.items.map((x: any) => String(x).trim()).filter(Boolean)
+      : normalizeLines(body?.items);
 
-    if (items.length < 24) {
-      return NextResponse.json(
-        { ok: false, error: `Need at least 24 items. Found ${items.length}.` },
-        { status: 400 }
-      );
+    if (!Number.isFinite(qty) || qty < 1 || qty > 500) {
+      return NextResponse.json({ error: "qty must be between 1 and 500" }, { status: 400 });
     }
 
-    // Create UNIQUE cards
-    const generated = createBingoPackUnique({ items, qty });
+    if (items.length < 24) {
+      return NextResponse.json({ error: `Need at least 24 items (got ${items.length})` }, { status: 400 });
+    }
 
-    // Build PDF element WITHOUT JSX (keeps this file .ts)
-    const doc = React.createElement(BingoPackPdf, {
-      packTitle,
-      sponsorName,
-      bannerUrl,
-      logoUrl,
-      cards: generated.cards as BingoCard[],
-    });
+    // ✅ Unique-grid pack generation
+    const generated = createBingoPack(items, qty);
 
-    // Render to Buffer (Node runtime)
-    const pdfBuffer = await renderToBuffer(doc);
+    const cards: BingoCard[] = generated.cards.map((c) => ({
+      id: c.id,
+      grid: c.grid, // string[][]
+    }));
+
+    // ✅ Build PDF document (component returns <Document/>)
+    const doc = (
+      <BingoPackPdf
+        packTitle={packTitle}
+        sponsorName={sponsorName}
+        bannerUrl={bannerUrl}
+        logoUrl={logoUrl}
+        cards={cards}
+      />
+    );
+
+    // ✅ FIX: TS typing mismatch in @react-pdf/renderer
+    const pdfBuffer = await renderToBuffer(doc as any);
 
     const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
 
-    // Roster CSV
-    const csvLines = ["card_id"];
-    for (const c of generated.cards) csvLines.push(c.id);
+    // roster CSV (card ids)
+    const csvLines = ["card_id", ...cards.map((c) => c.id)];
     const csv = csvLines.join("\n");
 
-    return NextResponse.json({
-      ok: true,
-      pdfBase64,
-      csv,
-      createdAt: Date.now(),
-    });
+    return NextResponse.json({ pdfBase64, csv });
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "Unknown error" },
+      { error: e?.message || "Unknown server error" },
       { status: 500 }
     );
   }
