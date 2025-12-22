@@ -1,20 +1,6 @@
 // lib/bingo.ts
-export type BingoCell = string | null;        // null = FREE center
-export type BingoRow = BingoCell[];
-export type BingoGrid = BingoRow[];           // 5 rows of 5 cells
-
-export type BingoCard = {
-  id: string;
-  grid: BingoGrid;
-};
-
-export type BingoPack = {
-  title: string;
-  sponsorName: string;
-  bannerUrl?: string;
-  logoUrl?: string;
-  cards: BingoCard[];
-};
+export type BingoGrid = string[][];
+export type BingoCard = { id: string; grid: BingoGrid };
 
 function mulberry32(seed: number) {
   return function () {
@@ -25,7 +11,31 @@ function mulberry32(seed: number) {
   };
 }
 
-function shuffle<T>(arr: T[], rand = Math.random): T[] {
+function hashStringToSeed(str: string) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function makeCardId() {
+  // short-ish, readable
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out.slice(0, 4) + "-" + out.slice(4);
+}
+
+function normalizeItems(items: string[]) {
+  return items
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .map((s) => s.replace(/\s+/g, " "));
+}
+
+function shuffle<T>(arr: T[], rand: () => number) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
@@ -34,91 +44,67 @@ function shuffle<T>(arr: T[], rand = Math.random): T[] {
   return a;
 }
 
-export function makeCardId(): string {
-  // short readable id like "U604-3PCZ"
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const pick = (n: number) =>
-    Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  return `${pick(4)}-${pick(4)}`;
-}
+// Make ONE 5x5 grid with center FREE.
+// Uses 24 unique items from pool.
+export function generateGrid(items: string[], seedKey: string): BingoGrid {
+  const clean = normalizeItems(items);
+  if (clean.length < 24) throw new Error("Need at least 24 items.");
 
-/**
- * Generates a 5x5 grid with center = null (FREE),
- * using 24 unique items sampled from the pool.
- */
-export function generateGrid(items: string[], rand = Math.random): BingoGrid {
-  if (items.length < 24) throw new Error("Need at least 24 items to build a 5x5 grid.");
+  const rand = mulberry32(hashStringToSeed(seedKey));
+  const picked = shuffle(clean, rand).slice(0, 24);
 
-  const picked = shuffle(items, rand).slice(0, 24);
-
-  // Fill row-major with a hole at center (r=2,c=2)
   const grid: BingoGrid = [];
   let k = 0;
-
   for (let r = 0; r < 5; r++) {
-    const row: BingoRow = [];
+    const row: string[] = [];
     for (let c = 0; c < 5; c++) {
-      if (r === 2 && c === 2) row.push(null); // FREE center
+      if (r === 2 && c === 2) row.push("FREE");
       else row.push(picked[k++]);
     }
     grid.push(row);
   }
-
   return grid;
 }
 
-function gridSignature(grid: BingoGrid): string {
-  // include positions; treat null as "FREE"
-  return grid
-    .map((row) => row.map((cell) => (cell == null ? "FREE" : cell)).join("|"))
-    .join("||");
+function gridSignature(grid: BingoGrid) {
+  // signature used to guarantee unique layouts
+  return grid.map((r) => r.join("|")).join("||");
 }
 
 /**
- * Step 1 (DONE here): create a pack where ALL card grids are unique.
- *
- * If qty is high and the pool is too small, uniqueness can become impossible.
- * We’ll attempt up to (qty * 200) tries and then throw a helpful error.
+ * Create a pack of UNIQUE cards (no duplicate grids).
+ * Will attempt to generate until it has `qty` unique grids or hits a max attempt limit.
  */
-export function createBingoPack(
-  items: string[],
-  qty: number,
-  opts?: { seed?: number }
-): { cards: BingoCard[] } {
-  if (!Number.isFinite(qty) || qty < 1 || qty > 500) {
-    throw new Error("Quantity must be between 1 and 500.");
-  }
-  if (items.length < 24) {
-    throw new Error(`Need at least 24 items. Got ${items.length}.`);
-  }
+export function createBingoPack(items: string[], qty: number) {
+  const clean = normalizeItems(items);
+  if (qty < 1 || qty > 500) throw new Error("Quantity must be between 1 and 500.");
+  if (clean.length < 24) throw new Error("Need at least 24 items.");
 
-  const rand = opts?.seed != null ? mulberry32(opts.seed) : Math.random;
-
-  const seen = new Set<string>();
   const cards: BingoCard[] = [];
+  const seen = new Set<string>();
 
-  const maxTries = Math.max(200, qty * 200);
-  let tries = 0;
+  // With small pools (like 25–60 items), uniqueness will eventually cap out.
+  // This limit prevents infinite loops.
+  const maxAttempts = Math.max(5000, qty * 200);
 
-  while (cards.length < qty) {
-    tries++;
-    if (tries > maxTries) {
-      throw new Error(
-        `Could not generate ${qty} unique cards with only ${items.length} pool items.\n` +
-          `Try increasing your item list (recommended 60–100 items for large packs).`
-      );
-    }
+  let attempts = 0;
+  while (cards.length < qty && attempts < maxAttempts) {
+    attempts++;
 
-    const grid = generateGrid(items, rand);
+    const id = makeCardId();
+    const grid = generateGrid(clean, `${id}-${attempts}-${Date.now()}`);
+
     const sig = gridSignature(grid);
-
     if (seen.has(sig)) continue;
-    seen.add(sig);
 
-    cards.push({
-      id: makeCardId(),
-      grid,
-    });
+    seen.add(sig);
+    cards.push({ id, grid });
+  }
+
+  if (cards.length < qty) {
+    throw new Error(
+      `Could only generate ${cards.length} unique cards from this item pool. Increase pool size for higher quantities.`
+    );
   }
 
   return { cards };
