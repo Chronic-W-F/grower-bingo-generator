@@ -58,10 +58,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // Create UNIQUE cards pack (core logic)
+    // ✅ Create UNIQUE cards pack (core logic)
     const generated = createBingoPack(items, qty);
 
-    // Convert to the PDF renderer's expected shape (center FREE is null)
+    // ✅ Keep BingoCell objects so BingoPackPdf types match
     const packForPdf: BingoPack = {
       packTitle,
       sponsorName,
@@ -69,16 +69,15 @@ export async function POST(req: Request) {
       logoUrl,
       cards: generated.cards.map((c) => ({
         id: c.id,
-        grid: c.grid.map((row) =>
-          row.map((cell) => (cell.text === "FREE" ? null : cell.text))
-        ),
+        grid: c.grid, // <-- IMPORTANT: don't convert to string/null
       })),
     };
 
+    // Render PDF buffer
     const pdfBuffer = await renderBingoPackPdf(packForPdf);
     const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
 
-    // CSV roster: card id + items on that card
+    // CSV roster: Card ID + the 24 items on that card (FREE omitted)
     const csvLines: string[] = [];
     csvLines.push(
       ["card_id", "pack_title", "sponsor_name", "items_on_card"]
@@ -87,7 +86,10 @@ export async function POST(req: Request) {
     );
 
     for (const card of packForPdf.cards) {
-      const flat = card.grid.flat().filter((x) => x !== null) as string[];
+      const flat = card.grid
+        .flat()
+        .map((cell) => cell.text)
+        .filter((t) => t !== "FREE");
       csvLines.push(
         [card.id, packTitle, sponsorName, flat.join(" | ")]
           .map(csvEscape)
