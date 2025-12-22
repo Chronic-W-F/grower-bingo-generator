@@ -5,15 +5,15 @@ import { useEffect, useMemo, useState } from "react";
 type GeneratedPack = {
   packTitle: string;
   sponsorName: string;
-  pdfBase64: string; // base64 (no data: prefix)
+  pdfBase64: string;
   csv: string;
   createdAt: number;
   requestKey: string;
 };
 
 type SponsorSkin = {
-  id: string; // local-only id
-  label: string; // e.g. "Joe's Grows"
+  id: string;
+  label: string;
   bannerUrl: string;
   logoUrl: string;
 };
@@ -26,7 +26,7 @@ type FormState = {
   sponsorName: string;
   bannerUrl: string;
   logoUrl: string;
-  qty: string; // ALWAYS string
+  qty: string;
   items: string;
   selectedSkinId: string;
   newSkinLabel: string;
@@ -60,6 +60,18 @@ function normalizeLines(text: string) {
     .split(/\r?\n/)
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+// Keep ONLY digits (mobile sometimes inserts invisible chars, spaces, etc.)
+function digitsOnly(v: unknown) {
+  const s = String(v ?? "");
+  return s.replace(/[^\d]/g, "");
+}
+
+function parseQty(v: unknown) {
+  const cleaned = digitsOnly(v);
+  const n = Number.parseInt(cleaned, 10);
+  return { cleaned, n };
 }
 
 function buildRequestKey(payload: {
@@ -96,7 +108,10 @@ export default function HomePage() {
   const [sponsorName, setSponsorName] = useState("Joe’s Grows");
   const [bannerUrl, setBannerUrl] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+
+  // Store qty as string, but keep it digits-only
   const [qty, setQty] = useState<string>("25");
+
   const [items, setItems] = useState<string>("");
 
   const [busy, setBusy] = useState(false);
@@ -124,21 +139,26 @@ export default function HomePage() {
     } catch {}
   }, [skins]);
 
-  // Load form (and coerce old qty types)
+  // Load form
   useEffect(() => {
     try {
       const raw = localStorage.getItem(FORM_KEY);
       if (!raw) return;
-      const f: Partial<FormState> & { qty?: any } = JSON.parse(raw);
+
+      const f: any = JSON.parse(raw);
 
       if (typeof f.packTitle === "string") setPackTitle(f.packTitle);
       if (typeof f.sponsorName === "string") setSponsorName(f.sponsorName);
       if (typeof f.bannerUrl === "string") setBannerUrl(f.bannerUrl);
       if (typeof f.logoUrl === "string") setLogoUrl(f.logoUrl);
 
-      // IMPORTANT: qty might be saved as number from older builds
-      if (typeof f.qty === "string") setQty(f.qty);
-      if (typeof f.qty === "number") setQty(String(f.qty));
+      // qty might be string OR number OR junk
+      if (f.qty !== undefined) {
+        const { cleaned, n } = parseQty(f.qty);
+        // If it’s unusable, fall back to "25"
+        if (Number.isFinite(n) && n > 0) setQty(String(n));
+        else setQty(cleaned || "25");
+      }
 
       if (typeof f.items === "string") setItems(f.items);
       if (typeof f.selectedSkinId === "string") setSelectedSkinId(f.selectedSkinId);
@@ -165,10 +185,11 @@ export default function HomePage() {
 
   const itemsList = useMemo(() => normalizeLines(items), [items]);
 
-  const currentRequestKey = useMemo(() => {
-    const qtyNum = Number(String(qty ?? "").trim());
-    const safeQty = Number.isFinite(qtyNum) ? qtyNum : 0;
+  // For display/debug only
+  const { cleaned: qtyCleaned, n: qtyParsed } = useMemo(() => parseQty(qty), [qty]);
 
+  const currentRequestKey = useMemo(() => {
+    const safeQty = Number.isFinite(qtyParsed) ? qtyParsed : 0;
     return buildRequestKey({
       packTitle: packTitle.trim(),
       sponsorName: sponsorName.trim(),
@@ -177,7 +198,7 @@ export default function HomePage() {
       qty: safeQty,
       items: itemsList,
     });
-  }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, itemsList]);
+  }, [packTitle, sponsorName, bannerUrl, logoUrl, qtyParsed, itemsList]);
 
   const packIsFresh = pack?.requestKey === currentRequestKey;
 
@@ -192,7 +213,6 @@ export default function HomePage() {
 
   function saveCurrentAsSkin() {
     setErr(null);
-
     const label = (newSkinLabel || sponsorName || "Sponsor").trim();
     if (!label) {
       setErr("Enter a sponsor name (or a Skin label) first.");
@@ -218,14 +238,33 @@ export default function HomePage() {
     setSelectedSkinId("");
   }
 
+  function clearSavedSettings() {
+    try {
+      localStorage.removeItem(FORM_KEY);
+      localStorage.removeItem(SKINS_KEY);
+    } catch {}
+    // Reset state
+    setPackTitle("Harvest Heroes Bingo");
+    setSponsorName("Joe’s Grows");
+    setBannerUrl("");
+    setLogoUrl("");
+    setQty("25");
+    setItems("");
+    setSelectedSkinId("");
+    setNewSkinLabel("");
+    setSkins([]);
+    setPack(null);
+    setErr(null);
+  }
+
   function validateInputs(): { qtyNum: number; itemsArr: string[] } | null {
     setErr(null);
 
-    const qtyStr = String(qty ?? "").trim();
-    const qtyNum = Number(qtyStr);
+    // IMPORTANT: re-parse qty RIGHT NOW (no stale memo / weird mobile timing)
+    const { cleaned, n } = parseQty(qty);
 
-    if (!Number.isFinite(qtyNum) || !Number.isInteger(qtyNum) || qtyNum < 1 || qtyNum > 500) {
-      setErr("Quantity must be between 1 and 500.");
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 500) {
+      setErr(`Quantity must be between 1 and 500. (raw="${String(qty)}" cleaned="${cleaned}" parsed="${String(n)}")`);
       return null;
     }
 
@@ -235,7 +274,7 @@ export default function HomePage() {
       return null;
     }
 
-    return { qtyNum, itemsArr };
+    return { qtyNum: n, itemsArr };
   }
 
   async function generatePack(): Promise<GeneratedPack> {
@@ -341,6 +380,11 @@ export default function HomePage() {
     >
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Grower Bingo Generator</h1>
 
+      {/* REAL DEBUG LINE */}
+      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 10 }}>
+        Debug qty: raw=<b>{String(qty)}</b> cleaned=<b>{qtyCleaned}</b> parsed=<b>{String(qtyParsed)}</b>
+      </div>
+
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <select
@@ -391,46 +435,43 @@ export default function HomePage() {
           >
             Delete selected skin
           </button>
+
+          <button
+            onClick={clearSavedSettings}
+            disabled={busy}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 999,
+              border: "1px solid #cc0000",
+              background: "#fff",
+              color: "#cc0000",
+              cursor: busy ? "not-allowed" : "pointer",
+            }}
+          >
+            Clear saved settings
+          </button>
         </div>
       </section>
 
       <section style={{ display: "grid", gap: 12 }}>
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>Pack title</span>
-          <input
-            value={packTitle}
-            onChange={(e) => setPackTitle(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-          />
+          <input value={packTitle} onChange={(e) => setPackTitle(e.target.value)} style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>Sponsor name</span>
-          <input
-            value={sponsorName}
-            onChange={(e) => setSponsorName(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-          />
+          <input value={sponsorName} onChange={(e) => setSponsorName(e.target.value)} style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>Banner image URL (top banner)</span>
-          <input
-            value={bannerUrl}
-            onChange={(e) => setBannerUrl(e.target.value)}
-            placeholder="https://…"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-          />
+          <input value={bannerUrl} onChange={(e) => setBannerUrl(e.target.value)} placeholder="https://…" style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>Sponsor logo URL (FREE center square)</span>
-          <input
-            value={logoUrl}
-            onChange={(e) => setLogoUrl(e.target.value)}
-            placeholder="https://…"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-          />
+          <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…" style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
@@ -438,27 +479,18 @@ export default function HomePage() {
           <input
             inputMode="numeric"
             value={qty}
-            onChange={(e) => setQty(e.target.value)} // IMPORTANT: keep string
+            onChange={(e) => setQty(digitsOnly(e.target.value))}
             style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", width: 180 }}
             placeholder="25"
           />
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>
-            Square pool items (one per line — need 24+). Current: {itemsList.length}
-          </span>
+          <span style={{ fontWeight: 600 }}>Square pool items (one per line — need 24+). Current: {itemsList.length}</span>
           <textarea
             value={items}
             onChange={(e) => setItems(e.target.value)}
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #ccc",
-              minHeight: 220,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-            }}
-            placeholder={"Example:\nDeep Water Culture\npH swing\nCal-Mag\n..."}
+            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", minHeight: 220, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
           />
         </label>
 
@@ -472,14 +504,7 @@ export default function HomePage() {
           <button
             onClick={onGenerateAndDownloadPdf}
             disabled={busy}
-            style={{
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "1px solid #111",
-              background: "#111",
-              color: "white",
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
+            style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid #111", background: "#111", color: "white", cursor: busy ? "not-allowed" : "pointer" }}
           >
             {busy ? "Generating…" : "Generate + Download PDF"}
           </button>
@@ -487,14 +512,7 @@ export default function HomePage() {
           <button
             onClick={onDownloadCsvRoster}
             disabled={busy}
-            style={{
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "1px solid #111",
-              background: "white",
-              color: "#111",
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
+            style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid #111", background: "white", color: "#111", cursor: busy ? "not-allowed" : "pointer" }}
           >
             Download CSV (Roster)
           </button>
