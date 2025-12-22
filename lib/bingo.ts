@@ -1,98 +1,76 @@
 // lib/bingo.ts
+import crypto from "crypto";
 
-export type BingoCell = string;
+export type BingoCell = { text: string; icon?: string };
 export type BingoGrid = BingoCell[][];
 export type BingoCard = { id: string; grid: BingoGrid };
 
-export type BingoPack = {
-  packTitle: string;
-  sponsorName: string;
-  bannerUrl?: string;
-  logoUrl?: string;
+export type CreatePackResult = {
   cards: BingoCard[];
 };
 
-export function normalizeLines(input: unknown): string[] {
-  const text = String(input ?? "");
-  // Handles \n, \r\n, old Mac \r, plus mobile unicode line separators
-  const normalized = text
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/\u2028|\u2029|\u0085/g, "\n");
-
-  return normalized
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+function uuid() {
+  // crypto.randomUUID exists in Node 18+, fallback just in case
+  // Vercel Node runtime supports randomUUID
+  return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
 }
 
-function mulberry32(seed: number) {
-  return function () {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function shuffle<T>(arr: T[], rnd = Math.random): T[] {
-  const a = arr.slice();
+function shuffle<T>(arr: T[]) {
+  const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
+    const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
 
-export function makeCardId(): string {
-  // short-ish readable id
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < 8; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return out.slice(0, 4) + "-" + out.slice(4);
+function pickUnique(items: string[], count: number): string[] {
+  if (items.length < count) throw new Error(`Need at least ${count} items to build a grid.`);
+  return shuffle(items).slice(0, count);
 }
 
-export function generateGrid(items: string[], rnd = Math.random): BingoGrid {
-  if (items.length < 24) throw new Error("Need at least 24 items.");
+function gridSignature(grid: BingoGrid) {
+  // signature for uniqueness check
+  return grid.map((r) => r.map((c) => c.text).join("|")).join("||");
+}
 
-  const picked = shuffle(items, rnd).slice(0, 24);
-
+export function createBingoCard(items: string[]): BingoCard {
+  // 5x5 with FREE center => 24 items
+  const picks = pickUnique(items, 24);
   const grid: BingoGrid = [];
-  let k = 0;
+  let idx = 0;
+
   for (let r = 0; r < 5; r++) {
-    const row: string[] = [];
+    const row: BingoCell[] = [];
     for (let c = 0; c < 5; c++) {
-      if (r === 2 && c === 2) row.push("FREE");
-      else row.push(picked[k++]);
+      if (r === 2 && c === 2) row.push({ text: "FREE" });
+      else row.push({ text: picks[idx++] });
     }
     grid.push(row);
   }
-  return grid;
+
+  return { id: uuid(), grid };
 }
 
-export function createBingoPackUnique(opts: {
-  items: string[];
-  qty: number;
-  seed?: number;
-  maxAttempts?: number;
-}): { cards: { id: string; grid: BingoGrid }[]; uniqueCount: number } {
-  const qty = Math.max(1, Math.min(500, Math.floor(opts.qty)));
-  const attempts = Math.max(1000, opts.maxAttempts ?? 20000);
-
-  const rnd = opts.seed != null ? mulberry32(opts.seed) : Math.random;
-
+export function createBingoPackUnique(opts: { items: string[]; qty: number; maxAttempts?: number }): CreatePackResult {
+  const { items, qty, maxAttempts = 20000 } = opts;
   const seen = new Set<string>();
-  const cards: { id: string; grid: BingoGrid }[] = [];
+  const cards: BingoCard[] = [];
 
-  let tries = 0;
-  while (cards.length < qty && tries < attempts) {
-    tries++;
-    const grid = generateGrid(opts.items, rnd);
-    const sig = grid.flat().join("|"); // includes FREE in the center
+  let attempts = 0;
+  while (cards.length < qty) {
+    attempts++;
+    if (attempts > maxAttempts) {
+      throw new Error(
+        `Could not generate ${qty} unique cards from ${items.length} items (attempted ${attempts}). Add more items.`
+      );
+    }
+    const card = createBingoCard(items);
+    const sig = gridSignature(card.grid);
     if (seen.has(sig)) continue;
     seen.add(sig);
-    cards.push({ id: makeCardId(), grid });
+    cards.push(card);
   }
 
-  return { cards, uniqueCount: cards.length };
+  return { cards };
 }
