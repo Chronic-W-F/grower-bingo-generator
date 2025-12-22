@@ -1,76 +1,51 @@
 // pdf/BingoPackPdf.tsx
 import React from "react";
-import {
-  Document,
-  Page,
-  Text,
-  View,
-  StyleSheet,
-  Image,
-  pdf,
-} from "@react-pdf/renderer";
-
-export type BingoGrid = string[][];
-export type BingoCard = { id: string; grid: BingoGrid };
-
-export type BingoPack = {
-  packTitle: string;
-  sponsorName: string;
-  bannerUrl?: string;
-  logoUrl?: string;
-  cards: BingoCard[];
-};
+import { Document, Page, View, Text, StyleSheet, pdf } from "@react-pdf/renderer";
+import type { BingoPack } from "@/lib/bingo";
 
 const styles = StyleSheet.create({
-  page: { padding: 28, fontSize: 11, fontFamily: "Helvetica" },
+  page: { padding: 24, fontSize: 10, fontFamily: "Helvetica" },
 
-  headerWrap: { marginBottom: 10 },
   headerBar: {
-    height: 38,
-    backgroundColor: "#111",
+    width: "100%",
+    padding: 10,
+    backgroundColor: "#111111",
     borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    justifyContent: "center",
+    marginBottom: 10,
   },
-  headerTitle: { color: "white", fontSize: 14, fontWeight: "bold" },
-  headerSub: { color: "white", fontSize: 10, marginTop: 2 },
+  headerTitle: { color: "#ffffff", fontSize: 14, fontWeight: 700 },
+  headerSub: { color: "#d1d5db", marginTop: 2 },
 
-  metaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
-  metaText: { color: "#222", fontSize: 9 },
+  rowMeta: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  metaText: { color: "#111827" },
 
-  board: {
-    marginTop: 8,
+  gridWrap: {
     borderWidth: 1,
-    borderColor: "#333",
-    borderRadius: 10,
+    borderColor: "#111827",
+    borderRadius: 8,
     overflow: "hidden",
   },
-  row: { flexDirection: "row" },
+  gridRow: { flexDirection: "row" },
 
   cell: {
     flex: 1,
+    height: 58,
     borderRightWidth: 1,
     borderBottomWidth: 1,
-    borderColor: "#333",
+    borderColor: "#111827",
     alignItems: "center",
     justifyContent: "center",
-    height: 58,
     padding: 6,
   },
-  lastCol: { borderRightWidth: 0 },
-  lastRow: { borderBottomWidth: 0 },
+  cellLastCol: { borderRightWidth: 0 },
+  cellLastRow: { borderBottomWidth: 0 },
 
-  cellText: { textAlign: "center", fontSize: 9, color: "#111" },
+  freeCell: { backgroundColor: "#111111" },
+  freeText: { color: "#ffffff", fontWeight: 700 },
 
-  freeCell: { backgroundColor: "#111" },
-  freeText: { color: "white", fontSize: 9, fontWeight: "bold" },
-  freeSub: { color: "white", fontSize: 7, marginTop: 2 },
+  cellText: { textAlign: "center" },
 
-  verify: { marginTop: 10, fontSize: 8, color: "#444" },
-
-  // optional logo inside FREE square if provided
-  freeLogo: { width: 42, height: 42, marginBottom: 4 },
+  footer: { marginTop: 8, color: "#374151" },
 });
 
 function BingoPackDoc({ pack }: { pack: BingoPack }) {
@@ -78,48 +53,34 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
     <Document>
       {pack.cards.map((card) => (
         <Page key={card.id} size="LETTER" style={styles.page}>
-          {/* Header */}
-          <View style={styles.headerWrap}>
-            <View style={styles.headerBar}>
-              <Text style={styles.headerTitle}>{pack.packTitle}</Text>
-              <Text style={styles.headerSub}>Sponsor: {pack.sponsorName}</Text>
-            </View>
-
-            <View style={styles.metaRow}>
-              <Text style={styles.metaText}>Card ID: {card.id}</Text>
-              <Text style={styles.metaText}>5×5 • Center is FREE</Text>
-            </View>
+          <View style={styles.headerBar}>
+            <Text style={styles.headerTitle}>{pack.packTitle}</Text>
+            <Text style={styles.headerSub}>Sponsor: {pack.sponsorName}</Text>
           </View>
 
-          {/* Board */}
-          <View style={styles.board}>
-            {card.grid.map((row, rIdx) => (
-              <View key={rIdx} style={styles.row}>
-                {row.map((cell, cIdx) => {
-                  const isLastCol = cIdx === row.length - 1;
-                  const isLastRow = rIdx === card.grid.length - 1;
-                  const isFree = rIdx === 2 && cIdx === 2;
+          <View style={styles.rowMeta}>
+            <Text style={styles.metaText}>Card ID: {card.id}</Text>
+            <Text style={styles.metaText}>5×5 • Center is FREE</Text>
+          </View>
 
-                  const cellStyle = [
+          <View style={styles.gridWrap}>
+            {card.grid.map((row, rIdx) => (
+              <View key={rIdx} style={styles.gridRow}>
+                {row.map((cell, cIdx) => {
+                  const isFree = cell === "FREE";
+                  // Build style array WITHOUT null/undefined
+                  const cellStyle = ([
                     styles.cell,
-                    isLastCol ? styles.lastCol : ({} as any),
-                    isLastRow ? styles.lastRow : ({} as any),
-                    isFree ? styles.freeCell : ({} as any),
-                  ];
+                    cIdx === 4 ? styles.cellLastCol : null,
+                    rIdx === 4 ? styles.cellLastRow : null,
+                    isFree ? styles.freeCell : null,
+                  ].filter(Boolean) as unknown) as any;
 
                   return (
-                    <View key={cIdx} style={cellStyle as any}>
-                      {isFree ? (
-                        <>
-                          {pack.logoUrl ? (
-                            <Image style={styles.freeLogo} src={pack.logoUrl} />
-                          ) : null}
-                          <Text style={styles.freeText}>{pack.sponsorName.toUpperCase()}</Text>
-                          <Text style={styles.freeSub}>FREE</Text>
-                        </>
-                      ) : (
-                        <Text style={styles.cellText}>{cell}</Text>
-                      )}
+                    <View key={cIdx} style={cellStyle}>
+                      <Text style={isFree ? styles.freeText : styles.cellText}>
+                        {isFree ? `${pack.sponsorName.toUpperCase()}\nFREE` : String(cell)}
+                      </Text>
                     </View>
                   );
                 })}
@@ -127,7 +88,7 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
             ))}
           </View>
 
-          <Text style={styles.verify}>
+          <Text style={styles.footer}>
             Verification: Screenshot your card with your Card ID visible when you claim bingo.
           </Text>
         </Page>
@@ -136,49 +97,51 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
   );
 }
 
-/**
- * Converts whatever @react-pdf gives us into a Node Buffer.
- * Handles Buffer, Uint8Array, ArrayBuffer, and ReadableStream.
- */
-async function toNodeBuffer(input: unknown): Promise<Buffer> {
-  // Already Buffer
-  if (typeof Buffer !== "undefined" && Buffer.isBuffer(input)) return input;
+async function streamToBuffer(rs: any): Promise<Buffer> {
+  // Handles ReadableStream or Node stream-ish outputs
+  if (!rs) throw new Error("PDF renderer returned empty output.");
+
+  // If Buffer already
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(rs)) return rs;
 
   // Uint8Array
-  if (input instanceof Uint8Array) return Buffer.from(input);
+  if (rs instanceof Uint8Array) return Buffer.from(rs);
 
   // ArrayBuffer
-  if (input instanceof ArrayBuffer) return Buffer.from(new Uint8Array(input));
+  if (rs instanceof ArrayBuffer) return Buffer.from(new Uint8Array(rs));
 
-  // ReadableStream (Web)
-  const maybeStream = input as any;
-  if (maybeStream && typeof maybeStream.getReader === "function") {
-    const reader = maybeStream.getReader();
+  // Web ReadableStream
+  if (typeof rs.getReader === "function") {
+    const reader = rs.getReader();
     const chunks: Uint8Array[] = [];
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       if (value) chunks.push(value);
     }
-    const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
-    const merged = new Uint8Array(total);
-    let offset = 0;
-    for (const c of chunks) {
-      merged.set(c, offset);
-      offset += c.byteLength;
-    }
-    return Buffer.from(merged);
+    return Buffer.concat(chunks.map((c) => Buffer.from(c)));
   }
 
-  // Fallback: try coercion
-  return Buffer.from(String(input), "utf8");
+  // Node stream
+  if (typeof rs.on === "function") {
+    return await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      rs.on("data", (d: any) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
+      rs.on("end", () => resolve(Buffer.concat(chunks)));
+      rs.on("error", reject);
+    });
+  }
+
+  throw new Error("PDF renderer returned an unsupported type.");
 }
 
 export async function renderBingoPackPdf(pack: BingoPack): Promise<Buffer> {
   const doc = <BingoPackDoc pack={pack} />;
-  const instance = pdf(doc);
+  const instance = pdf(doc) as any;
 
-  // @react-pdf/renderer may return Buffer OR ReadableStream depending on environment
-  const out = await instance.toBuffer();
-  return await toNodeBuffer(out);
+  // Different versions return different shapes; handle both
+  const out = (await instance.toBuffer?.()) ?? (await instance.toStream?.());
+  return await streamToBuffer(out);
 }
+
+export type { BingoPack };
