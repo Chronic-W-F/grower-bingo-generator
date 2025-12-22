@@ -90,19 +90,21 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
                     // Ensure the PDF only ever gets STRINGS (prevents [object Object])
                     const cellText = typeof cell === "string" ? cell : String(cell ?? "");
 
+                    // ✅ NO nulls in style array (react-pdf typing hates null)
+                    const cellStyle = [
+                      styles.cell,
+                      ...(isLastCell ? [styles.lastCellInRow] : []),
+                      ...(isLastRow ? [styles.lastRow] : []),
+                      ...(isCenter ? [styles.freeCell] : []),
+                    ];
+
                     return (
-                      <View
-                        key={cIdx}
-                        style={[
-                          styles.cell,
-                          isLastCell ? styles.lastCellInRow : null,
-                          isLastRow ? styles.lastRow : null,
-                          isCenter ? styles.freeCell : null,
-                        ]}
-                      >
+                      <View key={cIdx} style={cellStyle}>
                         {isCenter ? (
                           <>
-                            <Text style={styles.freeTextTop}>{pack.sponsorName.toUpperCase()}</Text>
+                            <Text style={styles.freeTextTop}>
+                              {pack.sponsorName.toUpperCase()}
+                            </Text>
                             <Text style={styles.freeTextBottom}>FREE</Text>
                           </>
                         ) : (
