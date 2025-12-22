@@ -6,7 +6,6 @@ import {
   Text,
   View,
   StyleSheet,
-  Image,
   pdf,
 } from "@react-pdf/renderer";
 
@@ -53,6 +52,10 @@ const styles = StyleSheet.create({
     height: 48,
     padding: 2,
   },
+  // ✅ make "last column" and "last row" not double-border
+  cellLastCol: { borderRightWidth: 0 },
+  cellLastRow: { borderBottomWidth: 0 },
+
   cellText: {
     textAlign: "center",
     fontSize: 9,
@@ -95,22 +98,19 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
               <View key={rIdx} style={styles.row}>
                 {row.map((cell, cIdx) => {
                   const isFree = cell === "FREE";
+
+                  // ✅ Build a style array with ONLY real styles (no undefined/null)
+                  const cellStyles = [styles.cell];
+                  if (cIdx === 4) cellStyles.push(styles.cellLastCol);
+                  if (rIdx === 4) cellStyles.push(styles.cellLastRow);
+                  if (isFree) cellStyles.push(styles.freeCell);
+
+                  const textStyles = [styles.cellText];
+                  if (isFree) textStyles.push(styles.freeText);
+
                   return (
-                    <View
-                      key={cIdx}
-                      style={[
-                        styles.cell,
-                        cIdx === 4 ? undefined : {},
-                        rIdx === 4 ? undefined : {},
-                        isFree ? styles.freeCell : undefined,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.cellText,
-                          isFree ? styles.freeText : undefined,
-                        ]}
-                      >
+                    <View key={cIdx} style={cellStyles}>
+                      <Text style={textStyles}>
                         {isFree ? `${pack.sponsorName}\nFREE` : cell}
                       </Text>
                     </View>
@@ -131,12 +131,9 @@ function BingoPackDoc({ pack }: { pack: BingoPack }) {
 }
 
 /**
- * ✅ THIS IS THE KEY
- * We explicitly return a Buffer — nothing else
+ * ✅ Always return a Buffer (works clean on Vercel)
  */
-export async function renderBingoPackPdf(
-  pack: BingoPack
-): Promise<Buffer> {
+export async function renderBingoPackPdf(pack: BingoPack): Promise<Buffer> {
   const doc = <BingoPackDoc pack={pack} />;
   const instance = pdf(doc);
   const buffer = await instance.toBuffer();
