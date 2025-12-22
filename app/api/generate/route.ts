@@ -1,3 +1,4 @@
+// app/api/generate/route.ts
 import { NextResponse } from "next/server";
 import { createBingoPack } from "@/lib/bingo";
 import { renderBingoPackPdf, type BingoPack } from "@/pdf/BingoPackPdf";
@@ -5,104 +6,80 @@ import { renderBingoPackPdf, type BingoPack } from "@/pdf/BingoPackPdf";
 export const runtime = "nodejs";
 
 function normalizeLines(text: unknown) {
-  return String(text ?? "")
-    .split(/\r?\n/)
+  if (typeof text !== "string") return [];
+  return text
+    .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
-function csvEscape(v: string) {
-  return `"${v.replace(/"/g, '""')}"`;
+function parseQty(raw: unknown) {
+  const s = String(raw ?? "").trim();
+  const n = Number(s);
+  if (!Number.isFinite(n)) return 0;
+  return Math.floor(n);
+}
+
+function cleanUrl(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const t = raw.trim();
+  return t ? t : undefined;
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const packTitle = String(body?.packTitle ?? "Grower Bingo").trim();
-    const sponsorName = String(body?.sponsorName ?? "Sponsor").trim();
+    const packTitle = typeof body.packTitle === "string" ? body.packTitle.trim() : "Bingo Pack";
+    const sponsorName =
+      typeof body.sponsorName === "string" ? body.sponsorName.trim() : "Sponsor";
 
-    const bannerUrlRaw = body?.bannerUrl ?? null;
-    const logoUrlRaw = body?.logoUrl ?? null;
+    const bannerUrl = cleanUrl(body.bannerUrl); // ✅ string | undefined (never null)
+    const logoUrl = cleanUrl(body.logoUrl);     // ✅ string | undefined (never null)
 
-    const bannerUrl =
-      typeof bannerUrlRaw === "string" && bannerUrlRaw.trim()
-        ? bannerUrlRaw.trim()
-        : null;
-
-    const logoUrl =
-      typeof logoUrlRaw === "string" && logoUrlRaw.trim()
-        ? logoUrlRaw.trim()
-        : null;
-
-    const qty = Number(body?.qty ?? 0);
-    if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 1 || qty > 500) {
+    const qty = parseQty(body.quantity);
+    if (qty < 1 || qty > 500) {
       return NextResponse.json(
-        { error: "Quantity must be an integer between 1 and 500." },
+        { error: "Quantity must be between 1 and 500." },
         { status: 400 }
       );
     }
 
-    // items can come in as an array (preferred) or as textarea string
-    let items: string[] = [];
-    if (Array.isArray(body?.items)) {
-      items = body.items.map((x: any) => String(x).trim()).filter(Boolean);
-    } else {
-      items = normalizeLines(body?.items);
-    }
-
+    const items = normalizeLines(body.items);
     if (items.length < 24) {
       return NextResponse.json(
-        { error: `Need at least 24 items. You have ${items.length}.` },
+        { error: "Need at least 24 square pool items." },
         { status: 400 }
       );
     }
 
-    // ✅ Create UNIQUE cards pack (core logic)
+    // ✅ Unique pack generation
     const generated = createBingoPack(items, qty);
 
-    // ✅ Keep BingoCell objects so BingoPackPdf types match
-    const packForPdf: BingoPack = {
+    // ✅ Build the pack with correct types
+    const pack: BingoPack = {
       packTitle,
       sponsorName,
-      bannerUrl,
-      logoUrl,
-      cards: generated.cards.map((c) => ({
-        id: c.id,
-        grid: c.grid, // <-- IMPORTANT: don't convert to string/null
-      })),
+      bannerUrl, // undefined is OK
+      logoUrl,   // undefined is OK
+      cards: generated.cards,
     };
 
-    // Render PDF buffer
-    const pdfBuffer = await renderBingoPackPdf(packForPdf);
-    const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
+    const pdfBuf = await renderBingoPackPdf(pack);
 
-    // CSV roster: Card ID + the 24 items on that card (FREE omitted)
-    const csvLines: string[] = [];
-    csvLines.push(
-      ["card_id", "pack_title", "sponsor_name", "items_on_card"]
-        .map(csvEscape)
-        .join(",")
-    );
-
-    for (const card of packForPdf.cards) {
-      const flat = card.grid
-        .flat()
-        .map((cell) => cell.text)
-        .filter((t) => t !== "FREE");
-      csvLines.push(
-        [card.id, packTitle, sponsorName, flat.join(" | ")]
-          .map(csvEscape)
-          .join(",")
-      );
-    }
-
-    const csv = csvLines.join("\n");
-
-    return NextResponse.json({ pdfBase64, csv });
+    return new NextResponse(pdfBuf as any, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${packTitle.replace(
+          /[^a-z0-9_-]+/gi,
+          "_"
+        )}.pdf"`,
+      },
+    });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err?.message || "Unknown server error" },
+      { error: err?.message ?? "Unknown server error" },
       { status: 500 }
     );
   }
