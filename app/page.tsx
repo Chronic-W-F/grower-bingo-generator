@@ -62,12 +62,9 @@ function normalizeLines(text: string) {
     .filter(Boolean);
 }
 
-// Remove invisible characters (mobile can insert weird spaces)
 function cleanNumericString(v: unknown) {
   const s = String(v ?? "");
-  // keep digits only
-  const digitsOnly = s.replace(/[^\d]/g, "");
-  return digitsOnly;
+  return s.replace(/[^\d]/g, "");
 }
 
 function parseQty(v: unknown) {
@@ -110,23 +107,16 @@ export default function HomePage() {
   const [sponsorName, setSponsorName] = useState("Joe’s Grows");
   const [bannerUrl, setBannerUrl] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
-
-  // keep as string always
-  const [qty, setQty] = useState<string>("25");
-  const [items, setItems] = useState<string>("");
+  const [qty, setQty] = useState("25");
+  const [items, setItems] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pack, setPack] = useState<GeneratedPack | null>(null);
 
   const [skins, setSkins] = useState<SponsorSkin[]>([]);
-  const [selectedSkinId, setSelectedSkinId] = useState<string>("");
-  const [newSkinLabel, setNewSkinLabel] = useState<string>("");
-
-  const itemsList = useMemo(() => normalizeLines(items), [items]);
-
-  // purely for display (debug)
-  const { cleaned: qtyCleanedUI, n: qtyParsedUI } = useMemo(() => parseQty(qty), [qty]);
+  const [selectedSkinId, setSelectedSkinId] = useState("");
+  const [newSkinLabel, setNewSkinLabel] = useState("");
 
   // Load skins
   useEffect(() => {
@@ -145,24 +135,18 @@ export default function HomePage() {
     } catch {}
   }, [skins]);
 
-  // Load form (coerce old qty types)
+  // Load form
   useEffect(() => {
     try {
       const raw = localStorage.getItem(FORM_KEY);
       if (!raw) return;
-
       const f: any = JSON.parse(raw);
 
       if (typeof f.packTitle === "string") setPackTitle(f.packTitle);
       if (typeof f.sponsorName === "string") setSponsorName(f.sponsorName);
       if (typeof f.bannerUrl === "string") setBannerUrl(f.bannerUrl);
       if (typeof f.logoUrl === "string") setLogoUrl(f.logoUrl);
-
-      if (f.qty !== undefined) {
-        const { cleaned, n } = parseQty(f.qty);
-        setQty(cleaned || (Number.isFinite(n) ? String(n) : "25"));
-      }
-
+      if (f.qty !== undefined) setQty(cleanNumericString(f.qty) || "25");
       if (typeof f.items === "string") setItems(f.items);
       if (typeof f.selectedSkinId === "string") setSelectedSkinId(f.selectedSkinId);
       if (typeof f.newSkinLabel === "string") setNewSkinLabel(f.newSkinLabel);
@@ -186,95 +170,53 @@ export default function HomePage() {
     } catch {}
   }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, items, selectedSkinId, newSkinLabel]);
 
-  function applySkin(id: string) {
-    setSelectedSkinId(id);
-    const skin = skins.find((s) => s.id === id);
-    if (!skin) return;
-    setSponsorName(skin.label);
-    setBannerUrl(skin.bannerUrl);
-    setLogoUrl(skin.logoUrl);
-  }
+  // ✅ FIX: clear stale errors when inputs change
+  useEffect(() => {
+    if (err) setErr(null);
+  }, [qty, items, packTitle, sponsorName, bannerUrl, logoUrl]);
 
-  function saveCurrentAsSkin() {
-    setErr(null);
-    const label = (newSkinLabel || sponsorName || "Sponsor").trim();
-    if (!label) {
-      setErr("Enter a sponsor name (or a Skin label) first.");
-      return;
-    }
+  const itemsList = useMemo(() => normalizeLines(items), [items]);
+  const { cleaned: qtyCleaned, n: qtyNumParsed } = useMemo(() => parseQty(qty), [qty]);
 
-    const skin: SponsorSkin = {
-      id: makeLocalId(),
-      label,
+  const currentRequestKey = useMemo(() => {
+    return buildRequestKey({
+      packTitle: packTitle.trim(),
+      sponsorName: sponsorName.trim(),
       bannerUrl: bannerUrl.trim(),
       logoUrl: logoUrl.trim(),
-    };
+      qty: qtyNumParsed,
+      items: itemsList,
+    });
+  }, [packTitle, sponsorName, bannerUrl, logoUrl, qtyNumParsed, itemsList]);
 
-    setSkins((prev) => [skin, ...prev]);
-    setSelectedSkinId(skin.id);
-    setNewSkinLabel("");
-  }
+  const packIsFresh = pack?.requestKey === currentRequestKey;
 
-  function deleteSelectedSkin() {
-    setErr(null);
-    if (!selectedSkinId) return;
-    setSkins((prev) => prev.filter((s) => s.id !== selectedSkinId));
-    setSelectedSkinId("");
-  }
-
-  function validateInputs(): { qtyNum: number; itemsArr: string[] } | null {
-    setErr(null);
-
-    // ✅ IMPORTANT: re-parse FRESH at click-time (do not rely on memo)
-    const { cleaned, n } = parseQty(qty);
-
-    // keep the input sanitized (removes invisible chars / spaces)
-    if (cleaned !== qty) setQty(cleaned);
-
-    const qtyNum = n;
-
-    const finite = Number.isFinite(qtyNum);
-    const integer = Number.isInteger(qtyNum);
-
-    if (!finite || !integer || qtyNum < 1 || qtyNum > 500) {
-      setErr(
-        `Quantity must be between 1 and 500. (debug: raw="${String(qty)}" cleaned="${cleaned}" parsed="${String(
-          qtyNum
-        )}" finite=${String(finite)} integer=${String(integer)})`
-      );
+  function validateInputs() {
+    if (!Number.isInteger(qtyNumParsed) || qtyNumParsed < 1 || qtyNumParsed > 500) {
+      setErr("Quantity must be between 1 and 500.");
       return null;
     }
 
-    const itemsArr = itemsList;
-    if (itemsArr.length < 24) {
-      setErr(`Need at least 24 square items (you have ${itemsArr.length}).`);
+    if (itemsList.length < 24) {
+      setErr(`Need at least 24 square items (you have ${itemsList.length}).`);
       return null;
     }
 
-    return { qtyNum, itemsArr };
+    return { qtyNum: qtyNumParsed, itemsArr: itemsList };
   }
 
-  async function generatePack(): Promise<GeneratedPack> {
+  async function generatePack() {
     const validated = validateInputs();
     if (!validated) throw new Error("Invalid inputs.");
 
     const payload = {
-      packTitle: packTitle.trim(),
-      sponsorName: sponsorName.trim(),
-      bannerUrl: bannerUrl.trim() || null,
-      logoUrl: logoUrl.trim() || null,
+      packTitle,
+      sponsorName,
+      bannerUrl: bannerUrl || null,
+      logoUrl: logoUrl || null,
       qty: validated.qtyNum,
       items: validated.itemsArr,
     };
-
-    const requestKey = buildRequestKey({
-      packTitle: payload.packTitle,
-      sponsorName: payload.sponsorName,
-      bannerUrl: payload.bannerUrl || "",
-      logoUrl: payload.logoUrl || "",
-      qty: payload.qty,
-      items: payload.items,
-    });
 
     const data = await safeJsonFetch("/api/generate", {
       method: "POST",
@@ -282,251 +224,56 @@ export default function HomePage() {
       body: JSON.stringify(payload),
     });
 
-    const pdfBase64 = data?.pdfBase64;
-    const csv = data?.csv;
-
-    if (typeof pdfBase64 !== "string" || !pdfBase64) throw new Error("Server did not return pdfBase64.");
-    if (typeof csv !== "string") throw new Error("Server did not return csv.");
-
     const newPack: GeneratedPack = {
-      packTitle: payload.packTitle,
-      sponsorName: payload.sponsorName,
-      pdfBase64,
-      csv,
+      packTitle,
+      sponsorName,
+      pdfBase64: data.pdfBase64,
+      csv: data.csv,
       createdAt: Date.now(),
-      requestKey,
+      requestKey: currentRequestKey,
     };
 
     setPack(newPack);
     return newPack;
   }
 
-  function downloadPdfFromPack(p: GeneratedPack) {
+  function downloadPdf(p: GeneratedPack) {
     const bytes = Uint8Array.from(atob(p.pdfBase64), (c) => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    const filename = `${safeFileName(p.packTitle)}_${safeFileName(p.sponsorName)}.pdf`;
-    downloadBlob(filename, blob);
+    downloadBlob(
+      `${safeFileName(p.packTitle)}_${safeFileName(p.sponsorName)}.pdf`,
+      new Blob([bytes], { type: "application/pdf" })
+    );
   }
 
-  function downloadCsvFromPack(p: GeneratedPack) {
-    const blob = new Blob([p.csv], { type: "text/csv;charset=utf-8" });
-    const filename = `${safeFileName(p.packTitle)}_${safeFileName(p.sponsorName)}_roster.csv`;
-    downloadBlob(filename, blob);
-  }
-
-  const currentRequestKey = useMemo(() => {
-    const safeQty = Number.isFinite(qtyParsedUI) ? qtyParsedUI : 0;
-    return buildRequestKey({
-      packTitle: packTitle.trim(),
-      sponsorName: sponsorName.trim(),
-      bannerUrl: bannerUrl.trim(),
-      logoUrl: logoUrl.trim(),
-      qty: safeQty,
-      items: itemsList,
-    });
-  }, [packTitle, sponsorName, bannerUrl, logoUrl, qtyParsedUI, itemsList]);
-
-  const packIsFresh = pack?.requestKey === currentRequestKey;
-
-  async function onGenerateAndDownloadPdf() {
-    setErr(null);
-    setBusy(true);
-    try {
-      const p = await generatePack();
-      downloadPdfFromPack(p);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to generate.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onDownloadCsvRoster() {
-    setErr(null);
-
-    if (pack && packIsFresh) {
-      downloadCsvFromPack(pack);
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const p = await generatePack();
-      downloadCsvFromPack(p);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to generate.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function clearSavedSettings() {
-    try {
-      localStorage.removeItem(FORM_KEY);
-      localStorage.removeItem(SKINS_KEY);
-    } catch {}
-
-    // reset state
-    setPackTitle("Harvest Heroes Bingo");
-    setSponsorName("Joe’s Grows");
-    setBannerUrl("");
-    setLogoUrl("");
-    setQty("25");
-    setItems("");
-    setSkins([]);
-    setSelectedSkinId("");
-    setNewSkinLabel("");
-    setPack(null);
-    setErr(null);
+  function downloadCsv(p: GeneratedPack) {
+    downloadBlob(
+      `${safeFileName(p.packTitle)}_${safeFileName(p.sponsorName)}_roster.csv`,
+      new Blob([p.csv], { type: "text/csv;charset=utf-8" })
+    );
   }
 
   return (
-    <main style={{ maxWidth: 740, margin: "0 auto", padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Grower Bingo Generator</h1>
+    <main style={{ maxWidth: 740, margin: "0 auto", padding: 16 }}>
+      <h1>Grower Bingo Generator</h1>
 
-      <button
-        onClick={clearSavedSettings}
-        style={{
-          padding: "10px 14px",
-          borderRadius: 999,
-          border: "1px solid #b00020",
-          background: "#fff",
-          color: "#b00020",
-          cursor: "pointer",
-          marginBottom: 10,
-        }}
-      >
-        Clear saved settings
-      </button>
-
-      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 10 }}>
-        Debug qty: raw="<b>{String(qty)}</b>" cleaned="<b>{qtyCleanedUI}</b>" parsed=<b>{String(qtyParsedUI)}</b>
+      <div style={{ fontSize: 12 }}>
+        Debug qty: raw="{qty}" cleaned="{qtyCleaned}" parsed={qtyNumParsed}
       </div>
 
-      <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginBottom: 16 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <select
-            value={selectedSkinId}
-            onChange={(e) => applySkin(e.target.value)}
-            style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc", minWidth: 220 }}
-          >
-            <option value="">Select a saved skin…</option>
-            {skins.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+      <label>Quantity (1–500)</label>
+      <input value={qty} onChange={(e) => setQty(e.target.value)} />
 
-          <input
-            value={newSkinLabel}
-            onChange={(e) => setNewSkinLabel(e.target.value)}
-            placeholder="Skin label (optional)"
-            style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc", minWidth: 200 }}
-          />
+      <label>Square pool items (one per line — need 24+)</label>
+      <textarea value={items} onChange={(e) => setItems(e.target.value)} />
 
-          <button
-            onClick={saveCurrentAsSkin}
-            disabled={busy}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 999,
-              border: "1px solid #000",
-              background: "#000",
-              color: "#fff",
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
-          >
-            Save current as skin
-          </button>
+      {err && <div style={{ color: "red" }}>{err}</div>}
 
-          <button
-            onClick={deleteSelectedSkin}
-            disabled={busy || !selectedSkinId}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 999,
-              border: "1px solid #ccc",
-              background: "#fff",
-              cursor: busy || !selectedSkinId ? "not-allowed" : "pointer",
-            }}
-          >
-            Delete selected skin
-          </button>
-        </div>
-      </section>
-
-      <section style={{ display: "grid", gap: 12 }}>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Pack title</span>
-          <input value={packTitle} onChange={(e) => setPackTitle(e.target.value)} style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Sponsor name</span>
-          <input value={sponsorName} onChange={(e) => setSponsorName(e.target.value)} style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Banner image URL (top banner)</span>
-          <input value={bannerUrl} onChange={(e) => setBannerUrl(e.target.value)} placeholder="https://…" style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Sponsor logo URL (FREE center square)</span>
-          <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…" style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }} />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Quantity (1–500)</span>
-          <input
-            inputMode="numeric"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", width: 180 }}
-            placeholder="25"
-          />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>Square pool items (one per line — need 24+). Current: {itemsList.length}</span>
-          <textarea
-            value={items}
-            onChange={(e) => setItems(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", minHeight: 220, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
-          />
-        </label>
-
-        {err ? (
-          <div style={{ color: "#b00020", fontSize: 14 }}>
-            <b>Error:</b> {err}
-          </div>
-        ) : null}
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
-          <button
-            onClick={onGenerateAndDownloadPdf}
-            disabled={busy}
-            style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid #111", background: "#111", color: "white", cursor: busy ? "not-allowed" : "pointer" }}
-          >
-            {busy ? "Generating…" : "Generate + Download PDF"}
-          </button>
-
-          <button
-            onClick={onDownloadCsvRoster}
-            disabled={busy}
-            style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid #111", background: "white", color: "#111", cursor: busy ? "not-allowed" : "pointer" }}
-          >
-            Download CSV (Roster)
-          </button>
-        </div>
-
-        {pack ? (
-          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.85 }}>
-            Last generated: <b>{pack.packTitle}</b> — {new Date(pack.createdAt).toLocaleString()}
-          </div>
-        ) : null}
-      </section>
+      <button onClick={async () => downloadPdf(await generatePack())}>
+        Generate + Download PDF
+      </button>
+      <button onClick={async () => downloadCsv(packIsFresh && pack ? pack : await generatePack())}>
+        Download CSV (Roster)
+      </button>
     </main>
   );
 }
