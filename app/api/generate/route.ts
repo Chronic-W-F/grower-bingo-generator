@@ -1,86 +1,135 @@
-// app/api/generate/route.ts
-import { NextResponse } from "next/server";
-import { createBingoPack } from "@/lib/bingo";
-import { renderBingoPackPdf, type BingoPack } from "@/pdf/BingoPackPdf";
+// pdf/BingoPackPdf.tsx
+import React from "react";
+import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 
-export const runtime = "nodejs";
+export type BingoGrid = string[][];
+export type BingoCard = { id: string; grid: BingoGrid };
 
-function normalizeLines(text: unknown) {
-  if (typeof text !== "string") return [];
-  return text
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+export type BingoPack = {
+  packTitle: string;
+  sponsorName: string;
+  bannerUrl?: string;
+  logoUrl?: string;
+  cards: BingoCard[];
+};
+
+const styles = StyleSheet.create({
+  page: { padding: 24, fontSize: 10, fontFamily: "Helvetica" },
+
+  headerWrap: { marginBottom: 10 },
+  headerBar: {
+    backgroundColor: "#111",
+    borderRadius: 10,
+    padding: 10,
+    color: "#fff",
+  },
+  headerTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 2 },
+  headerSub: { fontSize: 10, opacity: 0.9 },
+
+  metaRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  metaLeft: { fontSize: 9 },
+  metaRight: { fontSize: 9, opacity: 0.85 },
+
+  cardWrap: {
+    borderWidth: 1,
+    borderColor: "#222",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+
+  grid: { flexDirection: "column" },
+  row: { flexDirection: "row" },
+  cell: {
+    width: "20%",
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#222",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 6,
+    minHeight: 58,
+  },
+  lastCellInRow: { borderRightWidth: 0 },
+  lastRow: { borderBottomWidth: 0 },
+
+  cellText: { textAlign: "center" },
+
+  freeCell: { backgroundColor: "#111" },
+  freeTextTop: { color: "#fff", fontSize: 9, fontWeight: "bold" },
+  freeTextBottom: { color: "#fff", fontSize: 7, opacity: 0.9 },
+
+  footer: { marginTop: 10, fontSize: 8, opacity: 0.8 },
+});
+
+function BingoPackDoc({ pack }: { pack: BingoPack }) {
+  return (
+    <Document>
+      {pack.cards.map((card) => (
+        <Page key={card.id} size="LETTER" style={styles.page}>
+          <View style={styles.headerWrap}>
+            <View style={styles.headerBar}>
+              <Text style={styles.headerTitle}>{pack.packTitle}</Text>
+              <Text style={styles.headerSub}>Sponsor: {pack.sponsorName}</Text>
+            </View>
+          </View>
+
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLeft}>Card ID: {card.id}</Text>
+            <Text style={styles.metaRight}>5×5 • Center is FREE</Text>
+          </View>
+
+          <View style={styles.cardWrap}>
+            <View style={styles.grid}>
+              {card.grid.map((row, rIdx) => (
+                <View key={rIdx} style={styles.row}>
+                  {row.map((cell, cIdx) => {
+                    const isCenter = rIdx === 2 && cIdx === 2;
+                    const isLastCell = cIdx === 4;
+                    const isLastRow = rIdx === 4;
+
+                    // Ensure the PDF only ever gets STRINGS (prevents [object Object])
+                    const cellText = typeof cell === "string" ? cell : String(cell ?? "");
+
+                    // ✅ NO nulls in style array (react-pdf typing hates null)
+                    const cellStyle = [
+                      styles.cell,
+                      ...(isLastCell ? [styles.lastCellInRow] : []),
+                      ...(isLastRow ? [styles.lastRow] : []),
+                      ...(isCenter ? [styles.freeCell] : []),
+                    ];
+
+                    return (
+                      <View key={cIdx} style={cellStyle}>
+                        {isCenter ? (
+                          <>
+                            <Text style={styles.freeTextTop}>
+                              {pack.sponsorName.toUpperCase()}
+                            </Text>
+                            <Text style={styles.freeTextBottom}>FREE</Text>
+                          </>
+                        ) : (
+                          <Text style={styles.cellText}>{cellText}</Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <Text style={styles.footer}>
+            Verification: Screenshot your card with your Card ID visible when you claim bingo.
+          </Text>
+        </Page>
+      ))}
+    </Document>
+  );
 }
 
-function parseQty(raw: unknown) {
-  const s = String(raw ?? "").trim();
-  const n = Number(s);
-  if (!Number.isFinite(n)) return 0;
-  return Math.floor(n);
-}
-
-function cleanUrl(raw: unknown): string | undefined {
-  if (typeof raw !== "string") return undefined;
-  const t = raw.trim();
-  return t ? t : undefined;
-}
-
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-
-    const packTitle = typeof body.packTitle === "string" ? body.packTitle.trim() : "Bingo Pack";
-    const sponsorName =
-      typeof body.sponsorName === "string" ? body.sponsorName.trim() : "Sponsor";
-
-    const bannerUrl = cleanUrl(body.bannerUrl); // ✅ string | undefined (never null)
-    const logoUrl = cleanUrl(body.logoUrl);     // ✅ string | undefined (never null)
-
-    const qty = parseQty(body.quantity);
-    if (qty < 1 || qty > 500) {
-      return NextResponse.json(
-        { error: "Quantity must be between 1 and 500." },
-        { status: 400 }
-      );
-    }
-
-    const items = normalizeLines(body.items);
-    if (items.length < 24) {
-      return NextResponse.json(
-        { error: "Need at least 24 square pool items." },
-        { status: 400 }
-      );
-    }
-
-    // ✅ Unique pack generation
-    const generated = createBingoPack(items, qty);
-
-    // ✅ Build the pack with correct types
-    const pack: BingoPack = {
-      packTitle,
-      sponsorName,
-      bannerUrl, // undefined is OK
-      logoUrl,   // undefined is OK
-      cards: generated.cards,
-    };
-
-    const pdfBuf = await renderBingoPackPdf(pack);
-
-    return new NextResponse(pdfBuf as any, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${packTitle.replace(
-          /[^a-z0-9_-]+/gi,
-          "_"
-        )}.pdf"`,
-      },
-    });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message ?? "Unknown server error" },
-      { status: 500 }
-    );
-  }
+export async function renderBingoPackPdf(pack: BingoPack) {
+  const doc = <BingoPackDoc pack={pack} />;
+  const instance = pdf(doc);
+  const buf = await instance.toBuffer();
+  return buf;
 }
