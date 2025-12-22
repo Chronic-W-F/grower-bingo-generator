@@ -1,60 +1,43 @@
+// app/api/generate/route.ts
 import { NextResponse } from "next/server";
-import { pdf } from "@react-pdf/renderer";
+import React from "react";
+import { renderToBuffer } from "@react-pdf/renderer";
 import BingoPackPdf from "@/pdf/BingoPackPdf";
-import { createBingoPackUnique } from "@/lib/bingo";
+import { createBingoPackUnique, type BingoCard } from "@/lib/bingo";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function asString(v: unknown) {
   return typeof v === "string" ? v : "";
 }
 
 function normalizeLines(input: unknown): string[] {
+  // Accept either array of strings or a big textarea string.
   if (Array.isArray(input)) {
-    return input.map(String).map(s => s.trim()).filter(Boolean);
+    return input.map((x) => String(x).trim()).filter(Boolean);
   }
-
-  if (typeof input === "string") {
-    return input
-      .split(/\r?\n/)
-      .map(s => s.trim())
-      .filter(Boolean);
-  }
-
-  return [];
-}
-
-async function streamToUint8Array(stream: ReadableStream): Promise<Uint8Array> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-
-  const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-  const result = new Uint8Array(totalLength);
-
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return result;
+  const text = String(input ?? "");
+  return text
+    .split(/\r?\n/)
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const packTitle = asString(body.packTitle) || "Grower Bingo";
-    const sponsorName = asString(body.sponsorName) || "Sponsor";
-    const bannerUrl = asString(body.bannerUrl);
-    const logoUrl = asString(body.logoUrl);
+    const packTitle = asString(body.packTitle).trim() || "Harvest Heroes Bingo";
+    const sponsorName = asString(body.sponsorName).trim() || "Sponsor";
+
+    const bannerUrlRaw = asString(body.bannerUrl).trim();
+    const logoUrlRaw = asString(body.logoUrl).trim();
+    const bannerUrl = bannerUrlRaw.length ? bannerUrlRaw : undefined;
+    const logoUrl = logoUrlRaw.length ? logoUrlRaw : undefined;
 
     const qtyNum = Number(body.qty);
-    const qty = Number.isFinite(qtyNum) ? Math.max(1, Math.min(500, qtyNum)) : 1;
+    const qty = Number.isFinite(qtyNum) ? Math.max(1, Math.min(500, Math.floor(qtyNum))) : 25;
 
     const items = normalizeLines(body.items);
 
@@ -65,36 +48,37 @@ export async function POST(req: Request) {
       );
     }
 
-    // Generate unique cards
+    // Create UNIQUE cards
     const generated = createBingoPackUnique({ items, qty });
 
-    // Build PDF document
-    const doc = (
-      <BingoPackPdf
-        packTitle={packTitle}
-        sponsorName={sponsorName}
-        bannerUrl={bannerUrl || undefined}
-        logoUrl={logoUrl || undefined}
-        cards={generated.cards}
-      />
-    );
+    // Build PDF element WITHOUT JSX (keeps this file .ts)
+    const doc = React.createElement(BingoPackPdf, {
+      packTitle,
+      sponsorName,
+      bannerUrl,
+      logoUrl,
+      cards: generated.cards as BingoCard[],
+    });
 
-    // 🔥 CRITICAL FIX: handle ReadableStream correctly
-    const instance = pdf(doc);
-    const stream = await instance.toStream();
-    const uint8 = await streamToUint8Array(stream);
-    const pdfBase64 = Buffer.from(uint8).toString("base64");
+    // Render to Buffer (Node runtime)
+    const pdfBuffer = await renderToBuffer(doc);
+
+    const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
+
+    // Roster CSV
+    const csvLines = ["card_id"];
+    for (const c of generated.cards) csvLines.push(c.id);
+    const csv = csvLines.join("\n");
 
     return NextResponse.json({
       ok: true,
       pdfBase64,
-      csv: generated.csv,
+      csv,
+      createdAt: Date.now(),
     });
-
-  } catch (err: any) {
-    console.error(err);
+  } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message || "PDF generation failed" },
+      { ok: false, error: e?.message || "Unknown error" },
       { status: 500 }
     );
   }
