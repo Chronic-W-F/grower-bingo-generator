@@ -8,6 +8,9 @@ import BingoPackPdf from "@/pdf/BingoPackPdf";
 import { ICON_MAP } from "@/lib/iconMap";
 import { generateBingoPack } from "@/lib/bingo";
 
+// ✅ Force Node runtime (prevents ReadableStream edge behavior)
+export const runtime = "nodejs";
+
 type GenerateRequest = {
   quantity?: number;
   sponsorImage?: string; // "/sponsors/joes-grows.png"
@@ -15,8 +18,9 @@ type GenerateRequest = {
 };
 
 function publicFileToDataUri(publicPath: string) {
-  // publicPath like "/sponsors/joes-grows.png" or "/icons/leaf.png"
-  const abs = path.join(process.cwd(), "public", publicPath.replace(/^\/+/, ""));
+  const rel = publicPath.replace(/^\/+/, "");
+  const abs = path.join(process.cwd(), "public", rel);
+
   const buf = fs.readFileSync(abs);
   const ext = path.extname(abs).toLowerCase();
 
@@ -37,29 +41,24 @@ function safeTryDataUri(publicPath?: string) {
   try {
     return publicFileToDataUri(publicPath);
   } catch {
-    // If it can't be read (missing file), return original string (might still work locally)
-    return publicPath;
+    return publicPath; // fallback (local dev might still resolve)
   }
 }
 
 function buildIconDataMap() {
   const out: Record<string, string> = {};
-  for (const [label, publicPath] of Object.entries(ICON_MAP)) {
+  for (const [label, iconPath] of Object.entries(ICON_MAP)) {
     try {
-      out[label] = publicFileToDataUri(publicPath);
+      out[label] = publicFileToDataUri(iconPath);
     } catch {
-      // fallback to raw path if missing
-      out[label] = publicPath;
+      out[label] = iconPath;
     }
   }
   return out;
 }
 
 function toRosterCsv(cards: { id: string }[]) {
-  // Simple roster: Card ID per line. You can expand if you want.
-  const header = "CardID";
-  const rows = cards.map((c) => c.id);
-  return [header, ...rows].join("\n");
+  return ["CardID", ...cards.map((c) => c.id)].join("\n");
 }
 
 export async function POST(req: Request) {
@@ -69,15 +68,12 @@ export async function POST(req: Request) {
     const quantity = Math.max(1, Math.min(500, Number(body.quantity ?? 1)));
     const accentColor = body.accentColor ?? "#000000";
 
-    // ✅ Your existing generator (returns { cards })
     const pack = generateBingoPack(quantity);
     const cards = pack.cards;
 
-    // ✅ Convert sponsor and icons to server-safe data URIs
     const sponsorSrc = safeTryDataUri(body.sponsorImage);
     const iconMap = buildIconDataMap();
 
-    // ✅ Render PDF
     const pdfBuffer = await renderToBuffer(
       <BingoPackPdf
         cards={cards}
@@ -87,21 +83,15 @@ export async function POST(req: Request) {
       />
     );
 
-    const pdfBase64 = pdfBuffer.toString("base64");
-    const csv = toRosterCsv(cards);
-
     return NextResponse.json({
       ok: true,
-      pdfBase64,
-      csv,
+      pdfBase64: pdfBuffer.toString("base64"),
+      csv: toRosterCsv(cards),
       cardCount: cards.length,
     });
   } catch (err: any) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: err?.message ?? "Failed to generate bingo pack",
-      },
+      { ok: false, error: err?.message ?? "Failed to generate bingo pack" },
       { status: 500 }
     );
   }
