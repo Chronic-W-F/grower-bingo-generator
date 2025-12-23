@@ -1,3 +1,5 @@
+// lib/bingo.ts
+
 export type BingoGrid = string[][];
 
 export type BingoCard = {
@@ -9,6 +11,66 @@ export type BingoPack = {
   cards: BingoCard[];
 };
 
+// ==============================
+// BINGO ITEM POOL (SOURCE OF TRUTH)
+// ==============================
+export const BINGO_ITEMS: string[] = [
+  "Joe’s Grows",
+  "Harvest Heroes",
+  "Cal-Mag",
+  "pH Down",
+  "pH Up",
+  "EC Check",
+  "Reservoir Change",
+  "Top Off",
+  "AirStone",
+  "Root Check",
+  "Defoliation",
+  "Lollipop",
+  "Stretch Week",
+  "Pre-Flower",
+  "Trichomes",
+  "Amber Check",
+  "Flush Time",
+  "Dry Back",
+  "VPD Check",
+  "Humidity Spike",
+  "Heat Stress",
+  "Nute Burn",
+  "Lockout",
+  "Funky Terps",
+  "Frosty Buds",
+  "Bud Rot Watch",
+  "IPM Spray",
+  "Sticky Scissors",
+  "Trellis Net",
+  "Support Stakes",
+  "Clone Day",
+  "Transplant",
+  "Training Day",
+  "Topping",
+  "FIM",
+  "Supercrop",
+  "Lights On",
+  "Lights Off",
+  "Fan Leaves",
+  "Sugar Leaves",
+  "Trim Jail",
+  "Jar Time",
+  "Cure Check",
+  "Burp Jars",
+  "Smoke Test",
+  "Growmie Advice",
+  "New Genetics",
+  "Seed Pop",
+  "Pray for Yield",
+  "Send Pics",
+  "Winner Winner",
+];
+
+// ==============================
+// HELPERS
+// ==============================
 function makeId() {
   // short, readable, unique enough for packs
   return (
@@ -52,20 +114,25 @@ function gridKey(grid: BingoGrid) {
   return grid.map((row) => row.join("|")).join("||");
 }
 
+// ==============================
+// MAIN EXPORT
+// ==============================
 /**
- * Create a pack of UNIQUE grids (no duplicate card layouts in the pack).
- * - items: pool of square labels
- * - qty: number of cards
+ * Create a pack of UNIQUE bingo cards.
+ * @param items - pool of square labels
+ * @param qty - number of cards to generate
  */
-export function createBingoPack(items: string[], qty: number): BingoPack {
+export function createBingoPack(
+  items: string[],
+  qty: number
+): BingoPack {
   const unique = new Set<string>();
   const cards: BingoCard[] = [];
 
-  // Prevent infinite loops when qty is too high for a small pool
-  // This is a generous cap; collisions rise as qty increases.
+  // Prevent infinite loops when qty is too high
   const maxAttempts = Math.max(5000, qty * 500);
-
   let attempts = 0;
+
   while (cards.length < qty) {
     attempts++;
     if (attempts > maxAttempts) {
