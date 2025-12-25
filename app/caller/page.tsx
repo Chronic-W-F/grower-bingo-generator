@@ -1,53 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-
-// keep your existing imports below this line
-// (caller logic, state, etc.)
-
-export default function CallerPage() {
-  return (
-    <main className="mx-auto max-w-3xl p-4 md:p-8">
-      {/* HEADER + NAV */}
-      <div className="mb-6 rounded-lg border p-4 space-y-3">
-        <h1 className="text-3xl font-bold">Grower Bingo — Caller</h1>
-
-        <div className="flex flex-wrap gap-2">
-          <Link href="/">
-            <Button type="button">⬅ Back to Generator</Button>
-          </Link>
-
-          <a href="/" target="_blank" rel="noreferrer">
-            <Button type="button" variant="outline">
-              Generator (new tab)
-            </Button>
-          </a>
-        </div>
-
-        <p className="text-sm opacity-80">
-          Draw items in rounds (10 at a time, or whatever you choose).
-          No repeats until the deck is exhausted.
-        </p>
-      </div>
-
-      {/* YOUR EXISTING CALLER UI BELOW */}
-      {/* Do NOT change your caller logic */}
-    </main>
-  );
-}
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_TOPIC_POOL } from "@/lib/defaultItems";
 
 type CallerState = {
   started: boolean;
   round: number;
-  deck: string[];       // the chosen deck for THIS game (size = deckSize)
-  remaining: string[];  // what's left to draw
-  called: string[];     // what has been called so far (in order)
-  latestDraw: string[]; // last draw results
+  deck: string[];       // chosen deck for THIS game
+  remaining: string[];  // what is left to call
+  called: string[];     // everything called so far
+  latestDraw: string[]; // latest draw results
 };
 
 const LS_KEY = "grower-bingo:caller:v1";
@@ -83,7 +46,6 @@ function buildDeckFromPool(pool: string[], deckSize: number) {
     );
   }
 
-  // Shuffle the pool and take the first deckSize
   const shuffled = shuffle(unique);
   return shuffled.slice(0, deckSize);
 }
@@ -95,7 +57,7 @@ function createNewGame(poolText: string, deckSize: number): CallerState {
     started: true,
     round: 0,
     deck,
-    remaining: shuffle(deck), // shuffle the deck order for draws
+    remaining: shuffle(deck), // call order
     called: [],
     latestDraw: [],
   };
@@ -140,7 +102,7 @@ export default function CallerPage() {
     latestDraw: [],
   });
 
-  // Load saved state (so you can leave the page and come back)
+  // Load saved state
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -213,7 +175,6 @@ export default function CallerPage() {
       setState(updated);
     } catch (e: any) {
       setError(e?.message || "Could not draw.");
-      // If deck is exhausted, keep state visible
     }
   }
 
@@ -223,7 +184,6 @@ export default function CallerPage() {
     try {
       await navigator.clipboard.writeText(lines);
     } catch {
-      // fallback
       const el = document.createElement("textarea");
       el.value = lines;
       document.body.appendChild(el);
@@ -235,7 +195,34 @@ export default function CallerPage() {
 
   return (
     <main style={{ padding: 20, maxWidth: 900, margin: "0 auto", fontFamily: "system-ui" }}>
-      <h1 style={{ fontSize: 44, margin: "0 0 12px" }}>Grower Bingo — Caller</h1>
+      {/* NAV */}
+      <div
+        style={{
+          marginBottom: 14,
+          padding: 12,
+          borderRadius: 10,
+          border: "1px solid #ddd",
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ fontWeight: 800, fontSize: 18 }}>Grower Bingo — Caller</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href="/" style={{ textDecoration: "none" }}>
+            <button style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 800 }}>
+              ⬅ Back to Generator
+            </button>
+          </Link>
+          <a href="/" target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+            <button style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #111", background: "#fff", color: "#111", fontWeight: 800 }}>
+              Generator (new tab)
+            </button>
+          </a>
+        </div>
+      </div>
 
       {error ? (
         <div
@@ -350,9 +337,8 @@ export default function CallerPage() {
       )}
 
       <p style={{ marginTop: 18, opacity: 0.75 }}>
-        Defaults are shared from <code>lib/defaultItems.ts</code>. Update that one file and both the
-        generator + caller stay in sync.
+        Defaults are shared from <code>lib/defaultItems.ts</code>.
       </p>
     </main>
   );
-        }
+}
