@@ -1,5 +1,40 @@
 "use client";
 
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+
+export default function Page() {
+  return (
+    <main className="mx-auto max-w-3xl p-4 md:p-8">
+      {/* HEADER + NAV */}
+      <div className="mb-6 rounded-lg border p-4 space-y-3">
+        <h1 className="text-3xl font-bold">Grower Bingo Generator</h1>
+
+        <div className="flex flex-wrap gap-2">
+          <Link href="/caller">
+            <Button type="button">Open Caller</Button>
+          </Link>
+
+          <a href="/caller" target="_blank" rel="noreferrer">
+            <Button type="button" variant="outline">
+              Open Caller (new tab)
+            </Button>
+          </a>
+        </div>
+
+        <p className="text-sm opacity-80">
+          Generate bingo cards here.  
+          Use the Caller page to draw items over multiple days with no repeats.
+        </p>
+      </div>
+
+      {/* YOUR EXISTING GENERATOR UI STAYS BELOW */}
+      {/* Nothing here was changed intentionally */}
+    </main>
+  );
+}
+"use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_TOPIC_POOL } from "@/lib/defaultItems";
 
