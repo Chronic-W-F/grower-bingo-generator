@@ -1,71 +1,65 @@
 // lib/caller.ts
-// Caller logic: build a deck from a pool, then draw in chunks with no repeats.
 
 export type CallerState = {
-  deck: string[];   // randomized deck for this game (length = deckSize)
-  called: string[]; // everything called so far (in order)
-  round: number;    // how many draws have happened
+  started: boolean;
+  deck: string[];
+  called: string[];
+  round: number;
 };
 
-export type DrawResult = {
-  state: CallerState;
-  drawn: string[];  // what was drawn this round
-  done: boolean;    // true when deck is exhausted AFTER this draw
-};
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-function shuffle<T>(arr: T[]): T[] {
+function shuffle<T>(arr: T[], rand: () => number) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
 
-/**
- * Build a randomized deck of size deckSize from the pool (no duplicates).
- * pool should already be trimmed/unique by the caller UI if desired.
- */
-export function buildDeck(pool: string[], deckSize: number): CallerState {
-  const cleanPool = pool.map((s) => s.trim()).filter(Boolean);
+export function buildDeck(pool: string[], deckSize: number): string[] {
+  const clean = Array.from(
+    new Map(
+      pool
+        .map((s) => (s ?? "").trim())
+        .filter(Boolean)
+        .map((s) => [s.toLowerCase(), s] as const)
+    ).values()
+  );
 
-  if (deckSize < 1) throw new Error("deckSize must be >= 1");
-  if (deckSize > cleanPool.length) {
-    throw new Error(`Deck size (${deckSize}) larger than pool (${cleanPool.length})`);
+  if (deckSize > clean.length) {
+    throw new Error(`Deck size (${deckSize}) is larger than your pool (${clean.length}).`);
   }
 
-  const deck = shuffle(cleanPool).slice(0, deckSize);
-
-  return {
-    deck,
-    called: [],
-    round: 0,
-  };
+  const rand = mulberry32(Date.now() ^ Math.floor(Math.random() * 1e9));
+  return shuffle(clean, rand).slice(0, deckSize);
 }
 
-/**
- * Draw the next drawSize items from the deck without repeats.
- * Uses called.length as the pointer into the deck.
- */
-export function drawNext(state: CallerState, drawSize: number): DrawResult {
-  const size = Math.max(1, Math.floor(drawSize || 1));
+export function startGame(pool: string[], deckSize: number): CallerState {
+  const deck = buildDeck(pool, deckSize);
+  return { started: true, deck, called: [], round: 0 };
+}
 
-  const start = state.called.length;
-  const end = Math.min(state.deck.length, start + size);
-  const drawn = state.deck.slice(start, end);
+export function nextDraw(state: CallerState, drawSize: number): { state: CallerState; latest: string[] } {
+  if (!state.started) return { state, latest: [] };
 
-  // If nothing left to draw
-  if (drawn.length === 0) {
-    return { state, drawn: [], done: true };
-  }
+  const remaining = state.deck.filter((x) => !state.called.includes(x));
+  if (remaining.length === 0) return { state, latest: [] };
 
-  const nextState: CallerState = {
-    ...state,
-    called: [...state.called, ...drawn],
-    round: state.round + 1,
+  const take = Math.min(drawSize, remaining.length);
+  const latest = remaining.slice(0, take);
+
+  const newCalled = [...state.called, ...latest];
+  return {
+    state: { ...state, called: newCalled, round: state.round + 1 },
+    latest,
   };
-
-  const done = nextState.called.length >= nextState.deck.length;
-
-  return { state: nextState, drawn, done };
 }
