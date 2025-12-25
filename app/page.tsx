@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { DEFAULT_TOPIC_POOL } from "@/lib/defaultItems";
+import { DEFAULT_POOL_TEXT } from "@/lib/defaultItems";
+
+const POOL_STORAGE_KEY = "grower-bingo:pool:v1";
 
 type GeneratedPack = {
   pdfBase64: string;
@@ -13,295 +14,233 @@ type GeneratedPack = {
 
 const FORM_KEY = "grower-bingo:form:v2";
 
-function poolToTextarea(pool: string[]) {
-  return pool.join("\n");
-}
+const DEFAULT_ITEMS = DEFAULT_POOL_TEXT;
 
 function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
-  document.body.appendChild(a);
   a.click();
-  a.remove();
   URL.revokeObjectURL(url);
 }
 
-function cleanLines(text: string) {
-  return text
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-export default function Page() {
-  const defaultItemsText = useMemo(() => poolToTextarea(DEFAULT_TOPIC_POOL), []);
-
-  const [packTitle, setPackTitle] = useState("Harvest Heroes Bingo");
+export default function HomePage() {
+  const [title, setTitle] = useState("Harvest Heroes Bingo");
   const [sponsorName, setSponsorName] = useState("Joe’s Grows");
   const [bannerUrl, setBannerUrl] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
-  const [qty, setQty] = useState("25");
-  const [itemsText, setItemsText] = useState(defaultItemsText);
+  const [qtyInput, setQtyInput] = useState("25");
 
-  const [loading, setLoading] = useState(false);
-  const [pack, setPack] = useState<GeneratedPack | null>(null);
-  const [error, setError] = useState<string>("");
+  // ✅ THIS is the shared pool (saved + re-used by Caller)
+  const [itemsText, setItemsText] = useState(DEFAULT_ITEMS);
 
+  const qty = useMemo(() => {
+    const cleaned = (qtyInput || "").replace(/[^\d]/g, "");
+    const parsed = Math.max(1, Math.min(500, Number(cleaned || "1")));
+    return parsed;
+  }, [qtyInput]);
+
+  const currentCount = useMemo(() => {
+    return itemsText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean).length;
+  }, [itemsText]);
+
+  // Load saved form + saved pool on mount
   useEffect(() => {
     try {
       const raw = localStorage.getItem(FORM_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
+      if (raw) {
+        const v = JSON.parse(raw);
+        if (typeof v?.title === "string") setTitle(v.title);
+        if (typeof v?.sponsorName === "string") setSponsorName(v.sponsorName);
+        if (typeof v?.bannerUrl === "string") setBannerUrl(v.bannerUrl);
+        if (typeof v?.logoUrl === "string") setLogoUrl(v.logoUrl);
+        if (typeof v?.qtyInput === "string") setQtyInput(v.qtyInput);
+        if (typeof v?.itemsText === "string") setItemsText(v.itemsText);
+      }
 
-      if (typeof saved.packTitle === "string") setPackTitle(saved.packTitle);
-      if (typeof saved.sponsorName === "string") setSponsorName(saved.sponsorName);
-      if (typeof saved.bannerUrl === "string") setBannerUrl(saved.bannerUrl);
-      if (typeof saved.logoUrl === "string") setLogoUrl(saved.logoUrl);
-      if (typeof saved.qty === "string") setQty(saved.qty);
-      if (typeof saved.itemsText === "string") setItemsText(saved.itemsText);
+      // ✅ If pool was saved separately, prefer it
+      const pool = localStorage.getItem(POOL_STORAGE_KEY);
+      if (pool && pool.trim().length > 0) {
+        setItemsText(pool);
+      }
     } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Save form state whenever it changes
   useEffect(() => {
     try {
       localStorage.setItem(
         FORM_KEY,
-        JSON.stringify({ packTitle, sponsorName, bannerUrl, logoUrl, qty, itemsText })
+        JSON.stringify({ title, sponsorName, bannerUrl, logoUrl, qtyInput, itemsText })
       );
     } catch {
       // ignore
     }
-  }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, itemsText]);
+  }, [title, sponsorName, bannerUrl, logoUrl, qtyInput, itemsText]);
 
-  const itemCount = useMemo(() => cleanLines(itemsText).length, [itemsText]);
+  // ✅ AUTO-SAVE POOL so caller can use it
+  useEffect(() => {
+    try {
+      localStorage.setItem(POOL_STORAGE_KEY, itemsText);
+    } catch {
+      // ignore
+    }
+  }, [itemsText]);
 
-  async function generatePack() {
-    setError("");
-    setPack(null);
+  async function generatePdf() {
+    const body = {
+      title,
+      sponsorName,
+      bannerUrl,
+      logoUrl,
+      qty,
+      itemsText,
+    };
 
-    const items = cleanLines(itemsText);
-    const quantityParsed = Math.max(1, Math.min(500, Number(String(qty).trim() || "0")));
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-    if (items.length < 24) {
-      setError("Need at least 24 pool items (center is FREE).");
+    if (!res.ok) {
+      alert("Generate failed. Check your items list + try again.");
       return;
     }
 
-    setLoading(true);
-    try {
-      const requestKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const data = (await res.json()) as GeneratedPack;
 
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestKey,
-          title: packTitle,
-          sponsorName,
-          bannerImageUrl: bannerUrl || null,
-          sponsorLogoUrl: logoUrl || null,
-          qty: quantityParsed,
-          items,
-        }),
-      });
+    const pdfBytes = Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0));
+    downloadBlob(
+      `GrowerBingo-${Date.now()}.pdf`,
+      new Blob([pdfBytes], { type: "application/pdf" })
+    );
+  }
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Failed to generate pack.");
-      }
+  async function downloadCsv() {
+    const body = {
+      title,
+      sponsorName,
+      bannerUrl,
+      logoUrl,
+      qty,
+      itemsText,
+      csvOnly: true,
+    };
 
-      const data = (await res.json()) as GeneratedPack;
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-      const pdfBytes = Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0));
-      downloadBlob(
-        `${packTitle || "bingo-pack"}.pdf`,
-        new Blob([pdfBytes], { type: "application/pdf" })
-      );
-
-      setPack(data);
-    } catch (e: any) {
-      setError(e?.message || "Something went wrong.");
-    } finally {
-      setLoading(false);
+    if (!res.ok) {
+      alert("CSV failed. Try again.");
+      return;
     }
+
+    const data = (await res.json()) as GeneratedPack;
+    downloadBlob(`GrowerBingoRoster-${Date.now()}.csv`, new Blob([data.csv], { type: "text/csv" }));
   }
 
-  function downloadCsv() {
-    if (!pack) return;
-    const csvBlob = new Blob([pack.csv], { type: "text/csv;charset=utf-8" });
-    downloadBlob(`${packTitle || "bingo-pack"}-roster.csv`, csvBlob);
-  }
-
-  function resetToDefaults() {
-    setPack(null);
-    setError("");
-    setItemsText(defaultItemsText);
+  function resetPoolToDefaults() {
+    setItemsText(DEFAULT_ITEMS);
+    try {
+      localStorage.setItem(POOL_STORAGE_KEY, DEFAULT_ITEMS);
+    } catch {}
   }
 
   return (
-    <main style={{ padding: 20, maxWidth: 720, margin: "0 auto", fontFamily: "system-ui" }}>
-      {/* NAV */}
-      <div
-        style={{
-          marginBottom: 14,
-          padding: 12,
-          borderRadius: 10,
-          border: "1px solid #ddd",
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={{ fontWeight: 800, fontSize: 18 }}>Grower Bingo Generator</div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link href="/caller" style={{ textDecoration: "none" }}>
-            <button style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 800 }}>
-              Open Caller
-            </button>
-          </Link>
-          <a href="/caller" target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-            <button style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #111", background: "#fff", color: "#111", fontWeight: 800 }}>
-              Caller (new tab)
-            </button>
-          </a>
+    <main className="mx-auto max-w-3xl p-4 md:p-8 space-y-4">
+      <h1 className="text-3xl font-bold">Grower Bingo Generator</h1>
+
+      <label className="block space-y-1">
+        <div className="font-semibold">Pack title</div>
+        <input
+          className="w-full rounded border p-2"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </label>
+
+      <label className="block space-y-1">
+        <div className="font-semibold">Sponsor name</div>
+        <input
+          className="w-full rounded border p-2"
+          value={sponsorName}
+          onChange={(e) => setSponsorName(e.target.value)}
+        />
+      </label>
+
+      <label className="block space-y-1">
+        <div className="font-semibold">Banner image URL (top banner)</div>
+        <input
+          className="w-full rounded border p-2"
+          placeholder="https://..."
+          value={bannerUrl}
+          onChange={(e) => setBannerUrl(e.target.value)}
+        />
+      </label>
+
+      <label className="block space-y-1">
+        <div className="font-semibold">Sponsor logo URL (FREE center square)</div>
+        <input
+          className="w-full rounded border p-2"
+          placeholder="https://..."
+          value={logoUrl}
+          onChange={(e) => setLogoUrl(e.target.value)}
+        />
+      </label>
+
+      <label className="block space-y-1">
+        <div className="font-semibold">Quantity (1–500)</div>
+        <input
+          className="w-40 rounded border p-2"
+          value={qtyInput}
+          onChange={(e) => setQtyInput(e.target.value)}
+        />
+      </label>
+
+      <label className="block space-y-1">
+        <div className="font-semibold">
+          Square pool items (one per line — need 24+). Current: {currentCount}
         </div>
-      </div>
-
-      <h1 style={{ fontSize: 36, marginBottom: 10 }}>Grower Bingo Generator</h1>
-
-      {error ? (
-        <div
-          style={{
-            margin: "12px 0",
-            padding: 12,
-            borderRadius: 8,
-            background: "#ffe9e9",
-            border: "1px solid #ffb3b3",
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
-
-      <label style={{ display: "block", fontWeight: 600, marginTop: 12 }}>Pack title</label>
-      <input
-        value={packTitle}
-        onChange={(e) => setPackTitle(e.target.value)}
-        style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
-      />
-
-      <label style={{ display: "block", fontWeight: 600, marginTop: 12 }}>Sponsor name</label>
-      <input
-        value={sponsorName}
-        onChange={(e) => setSponsorName(e.target.value)}
-        style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
-      />
-
-      <label style={{ display: "block", fontWeight: 600, marginTop: 12 }}>
-        Banner image URL (top banner)
+        <textarea
+          className="h-64 w-full rounded border p-2 font-mono"
+          value={itemsText}
+          onChange={(e) => setItemsText(e.target.value)}
+        />
       </label>
-      <input
-        value={bannerUrl}
-        onChange={(e) => setBannerUrl(e.target.value)}
-        placeholder="https://..."
-        style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
-      />
 
-      <label style={{ display: "block", fontWeight: 600, marginTop: 12 }}>
-        Sponsor logo URL (FREE center square)
-      </label>
-      <input
-        value={logoUrl}
-        onChange={(e) => setLogoUrl(e.target.value)}
-        placeholder="https://..."
-        style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
-      />
-
-      <label style={{ display: "block", fontWeight: 600, marginTop: 12 }}>
-        Quantity (1–500)
-      </label>
-      <input
-        value={qty}
-        onChange={(e) => setQty(e.target.value)}
-        inputMode="numeric"
-        style={{ width: 140, padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
-      />
-
-      <label style={{ display: "block", fontWeight: 600, marginTop: 12 }}>
-        Square pool items (one per line — need 24+). Current: {itemCount}
-      </label>
-      <textarea
-        value={itemsText}
-        onChange={(e) => setItemsText(e.target.value)}
-        rows={14}
-        style={{
-          width: "100%",
-          padding: 10,
-          borderRadius: 8,
-          border: "1px solid #ccc",
-          fontFamily: "monospace",
-          whiteSpace: "pre",
-        }}
-      />
-
-      <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+      <div className="flex flex-wrap gap-2">
         <button
-          onClick={generatePack}
-          disabled={loading}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 10,
-            border: "1px solid #111",
-            background: "#111",
-            color: "white",
-            fontWeight: 700,
-            cursor: loading ? "not-allowed" : "pointer",
-          }}
+          className="rounded bg-black px-4 py-2 font-semibold text-white"
+          onClick={generatePdf}
         >
-          {loading ? "Generating..." : "Generate + Download PDF"}
+          Generate + Download PDF
         </button>
 
-        <button
-          onClick={downloadCsv}
-          disabled={!pack}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 10,
-            border: "1px solid #111",
-            background: "white",
-            color: "#111",
-            fontWeight: 700,
-            cursor: pack ? "pointer" : "not-allowed",
-          }}
-        >
+        <button className="rounded border px-4 py-2 font-semibold" onClick={downloadCsv}>
           Download CSV (Roster)
         </button>
 
-        <button
-          onClick={resetToDefaults}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 10,
-            border: "1px solid #ccc",
-            background: "white",
-            color: "#111",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
+        <button className="rounded border px-4 py-2 font-semibold" onClick={resetPoolToDefaults}>
           Reset pool to defaults
         </button>
+
+        <a className="rounded border px-4 py-2 font-semibold" href="/caller">
+          Open Caller
+        </a>
       </div>
 
-      <p style={{ marginTop: 12, opacity: 0.75 }}>
-        Default pool is shared from <code>lib/defaultItems.ts</code>.
+      <p className="text-sm opacity-80">
+        Note: The pool is auto-saved. The Caller page will use the same pool.
       </p>
     </main>
   );
