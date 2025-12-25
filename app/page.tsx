@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { DEFAULT_TOPIC_POOL } from "@/lib/defaultItems";
+import { DEFAULT_POOL_TEXT } from "@/lib/defaultItems";
+import { POOL_STORAGE_KEY, normalizePoolText, splitPool, countPoolItems } from "@/lib/pool";
 
 type GeneratedPack = {
   pdfBase64: string;
@@ -12,18 +13,6 @@ type GeneratedPack = {
 };
 
 const FORM_KEY = "grower-bingo:form:v3";
-const POOL_STORAGE_KEY = "grower-bingo:pool:v1";
-
-function poolToTextarea(pool: string[]) {
-  return pool.join("\n");
-}
-
-function cleanLines(text: string) {
-  return text
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
 
 function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
@@ -37,7 +26,7 @@ function downloadBlob(filename: string, blob: Blob) {
 }
 
 export default function Page() {
-  const defaultItemsText = useMemo(() => poolToTextarea(DEFAULT_TOPIC_POOL), []);
+  const defaultItemsText = useMemo(() => DEFAULT_POOL_TEXT, []);
 
   const [packTitle, setPackTitle] = useState("Harvest Heroes Bingo");
   const [sponsorName, setSponsorName] = useState("Joe’s Grows");
@@ -45,7 +34,7 @@ export default function Page() {
   const [logoUrl, setLogoUrl] = useState("");
   const [qty, setQty] = useState("25");
 
-  // ✅ This is now the SHARED pool
+  // SHARED pool textarea
   const [itemsText, setItemsText] = useState(defaultItemsText);
 
   const [loading, setLoading] = useState(false);
@@ -57,7 +46,7 @@ export default function Page() {
     try {
       const sharedPool = localStorage.getItem(POOL_STORAGE_KEY);
       if (sharedPool && sharedPool.trim().length > 0) {
-        setItemsText(sharedPool);
+        setItemsText(normalizePoolText(sharedPool));
       }
 
       const raw = localStorage.getItem(FORM_KEY);
@@ -69,7 +58,6 @@ export default function Page() {
       if (typeof saved.bannerUrl === "string") setBannerUrl(saved.bannerUrl);
       if (typeof saved.logoUrl === "string") setLogoUrl(saved.logoUrl);
       if (typeof saved.qty === "string") setQty(saved.qty);
-      if (typeof saved.itemsText === "string") setItemsText(saved.itemsText);
     } catch {
       // ignore
     }
@@ -81,29 +69,29 @@ export default function Page() {
     try {
       localStorage.setItem(
         FORM_KEY,
-        JSON.stringify({ packTitle, sponsorName, bannerUrl, logoUrl, qty, itemsText })
+        JSON.stringify({ packTitle, sponsorName, bannerUrl, logoUrl, qty })
       );
     } catch {
       // ignore
     }
-  }, [packTitle, sponsorName, bannerUrl, logoUrl, qty, itemsText]);
+  }, [packTitle, sponsorName, bannerUrl, logoUrl, qty]);
 
-  // ✅ Persist shared pool every time it changes
+  // Persist shared pool (normalized) every time it changes
   useEffect(() => {
     try {
-      localStorage.setItem(POOL_STORAGE_KEY, itemsText);
+      localStorage.setItem(POOL_STORAGE_KEY, normalizePoolText(itemsText));
     } catch {
       // ignore
     }
   }, [itemsText]);
 
-  const itemCount = useMemo(() => cleanLines(itemsText).length, [itemsText]);
+  const itemCount = useMemo(() => countPoolItems(itemsText), [itemsText]);
 
   async function generatePack() {
     setError("");
     setPack(null);
 
-    const items = cleanLines(itemsText);
+    const items = splitPool(itemsText);
     const quantityParsed = Math.max(1, Math.min(500, Number(String(qty).trim() || "0")));
 
     if (items.length < 24) {
@@ -160,12 +148,15 @@ export default function Page() {
     setPack(null);
     setError("");
     setItemsText(defaultItemsText);
+    try {
+      localStorage.setItem(POOL_STORAGE_KEY, defaultItemsText);
+    } catch {}
   }
 
-  function loadSharedPool() {
+  function reloadSharedPool() {
     try {
       const shared = localStorage.getItem(POOL_STORAGE_KEY);
-      if (shared && shared.trim().length > 0) setItemsText(shared);
+      if (shared && shared.trim().length > 0) setItemsText(normalizePoolText(shared));
     } catch {
       // ignore
     }
@@ -327,43 +318,4 @@ export default function Page() {
             cursor: pack ? "pointer" : "not-allowed",
           }}
         >
-          Download CSV (Roster)
-        </button>
-
-        <button
-          onClick={resetPoolToDefaults}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 10,
-            border: "1px solid #ccc",
-            background: "white",
-            color: "#111",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Reset pool to defaults
-        </button>
-
-        <button
-          onClick={loadSharedPool}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 10,
-            border: "1px solid #ccc",
-            background: "white",
-            color: "#111",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Reload shared pool
-        </button>
-      </div>
-
-      <p style={{ marginTop: 12, opacity: 0.75 }}>
-        Pool is shared via localStorage key <code>{POOL_STORAGE_KEY}</code>. Edit it once, both pages match.
-      </p>
-    </main>
-  );
-}
+          Download CSV (
