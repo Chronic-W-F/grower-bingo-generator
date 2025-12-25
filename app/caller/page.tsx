@@ -1,5 +1,43 @@
 "use client";
 
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+
+// keep your existing imports below this line
+// (caller logic, state, etc.)
+
+export default function CallerPage() {
+  return (
+    <main className="mx-auto max-w-3xl p-4 md:p-8">
+      {/* HEADER + NAV */}
+      <div className="mb-6 rounded-lg border p-4 space-y-3">
+        <h1 className="text-3xl font-bold">Grower Bingo — Caller</h1>
+
+        <div className="flex flex-wrap gap-2">
+          <Link href="/">
+            <Button type="button">⬅ Back to Generator</Button>
+          </Link>
+
+          <a href="/" target="_blank" rel="noreferrer">
+            <Button type="button" variant="outline">
+              Generator (new tab)
+            </Button>
+          </a>
+        </div>
+
+        <p className="text-sm opacity-80">
+          Draw items in rounds (10 at a time, or whatever you choose).
+          No repeats until the deck is exhausted.
+        </p>
+      </div>
+
+      {/* YOUR EXISTING CALLER UI BELOW */}
+      {/* Do NOT change your caller logic */}
+    </main>
+  );
+}
+"use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_TOPIC_POOL } from "@/lib/defaultItems";
 
