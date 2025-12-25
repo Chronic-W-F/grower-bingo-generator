@@ -1,211 +1,324 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { DEFAULT_POOL_TEXT } from "@/lib/defaultItems";
-import { buildDeck, drawNext, type CallerState } from "@/lib/caller";
+import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_TOPIC_POOL } from "@/lib/defaultItems";
 
+type CallerState = {
+  started: boolean;
+  round: number;
+  deck: string[];
+  remaining: string[];
+  called: string[];
+  latestDraw: string[];
+};
+
+const LS_KEY = "grower-bingo:caller:v2";
 const POOL_STORAGE_KEY = "grower-bingo:pool:v1";
 
-function normalizeLines(text: string) {
+function poolToTextarea(pool: string[]) {
+  return pool.join("\n");
+}
+
+function cleanLines(text: string) {
   return text
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
+function shuffle<T>(arr: T[]) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildDeckFromPool(pool: string[], deckSize: number) {
+  const unique = Array.from(new Set(pool.map((x) => x.trim()).filter(Boolean)));
+  if (unique.length < 1) throw new Error("Paste at least one topic.");
+  if (deckSize < 1) throw new Error("Deck size must be at least 1.");
+  if (deckSize > unique.length) {
+    throw new Error(
+      `Deck size (${deckSize}) is larger than your pool (${unique.length}). Reduce deck size or add more topics.`
+    );
+  }
+  return shuffle(unique).slice(0, deckSize);
+}
+
+function createNewGame(poolText: string, deckSize: number): CallerState {
+  const pool = cleanLines(poolText);
+  const deck = buildDeckFromPool(pool, deckSize);
+  return {
+    started: true,
+    round: 0,
+    deck,
+    remaining: shuffle(deck),
+    called: [],
+    latestDraw: [],
+  };
+}
+
+function nextDraw(state: CallerState, drawSize: number): CallerState {
+  if (!state.started) throw new Error("Start the game first.");
+  if (drawSize < 1) throw new Error("Draw size must be at least 1.");
+  if (state.remaining.length === 0) throw new Error("Deck exhausted — game over.");
+
+  const take = Math.min(drawSize, state.remaining.length);
+  const latest = state.remaining.slice(0, take);
+  const remaining = state.remaining.slice(take);
+  const called = [...state.called, ...latest];
+
+  return { ...state, round: state.round + 1, latestDraw: latest, remaining, called };
+}
+
 export default function CallerPage() {
-  const [poolText, setPoolText] = useState(DEFAULT_POOL_TEXT);
-  const [deckSize, setDeckSize] = useState(50);
-  const [drawSize, setDrawSize] = useState(10);
+  const defaultText = useMemo(() => poolToTextarea(DEFAULT_TOPIC_POOL), []);
 
-  const [state, setState] = useState<CallerState | null>(null);
-  const [latest, setLatest] = useState<string[]>([]);
+  // ✅ start with shared pool if present
+  const [poolText, setPoolText] = useState(defaultText);
+  const [deckSize, setDeckSize] = useState("50");
+  const [drawSize, setDrawSize] = useState("10");
+  const [error, setError] = useState("");
 
-  const poolCount = useMemo(() => normalizeLines(poolText).length, [poolText]);
+  const [state, setState] = useState<CallerState>({
+    started: false,
+    round: 0,
+    deck: [],
+    remaining: [],
+    called: [],
+    latestDraw: [],
+  });
 
-  // ✅ Auto-load the same pool the Generator saved
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(POOL_STORAGE_KEY);
-      if (saved && saved.trim().length > 0) {
-        setPoolText(saved);
+      const sharedPool = localStorage.getItem(POOL_STORAGE_KEY);
+      if (sharedPool && sharedPool.trim().length > 0) {
+        setPoolText(sharedPool);
       }
-    } catch {}
+
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+
+      if (typeof saved.poolText === "string") setPoolText(saved.poolText);
+      if (typeof saved.deckSize === "string") setDeckSize(saved.deckSize);
+      if (typeof saved.drawSize === "string") setDrawSize(saved.drawSize);
+      if (saved.state && typeof saved.state === "object") setState(saved.state);
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep the pool saved if user edits here too (optional but useful)
+  // persist caller state
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({ poolText, deckSize, drawSize, state }));
+    } catch {}
+  }, [poolText, deckSize, drawSize, state]);
+
+  // ✅ persist shared pool on any edit
   useEffect(() => {
     try {
       localStorage.setItem(POOL_STORAGE_KEY, poolText);
     } catch {}
   }, [poolText]);
 
-  const deckTooBig = deckSize > poolCount;
+  const poolCount = useMemo(() => cleanLines(poolText).length, [poolText]);
+  const parsedDeckSize = Math.max(1, Math.floor(Number(deckSize || "0")));
+  const parsedDrawSize = Math.max(1, Math.floor(Number(drawSize || "0")));
 
-  function loadDefaults() {
-    setPoolText(DEFAULT_POOL_TEXT);
+  function onLoadDefaults() {
+    setError("");
+    setPoolText(defaultText);
   }
 
-  function clear() {
-    setPoolText("");
-    setState(null);
-    setLatest([]);
-  }
-
-  function startGame() {
-    const pool = normalizeLines(poolText);
-    if (pool.length < 1) {
-      alert("Paste at least one topic");
-      return;
-    }
-    if (deckSize > pool.length) {
-      alert(`Deck size (${deckSize}) is larger than your pool (${pool.length}).`);
-      return;
-    }
-    const s = buildDeck(pool, deckSize);
-    setState(s);
-    setLatest([]);
-  }
-
-  function resetGame() {
-    setState(null);
-    setLatest([]);
-  }
-
-  function nextDraw() {
-    if (!state) return;
-    const res = drawNext(state, drawSize);
-    if (res.done) {
-      alert("Deck exhausted — game over.");
-      setState(res.state);
-      setLatest(res.drawn);
-      return;
-    }
-    setState(res.state);
-    setLatest(res.drawn);
-  }
-
-  async function copyLatest() {
-    if (!latest.length) return;
-    const text = latest.map((x, i) => `${i + 1}. ${x}`).join("\n");
+  function onReloadSharedPool() {
+    setError("");
     try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // fallback
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
+      const sharedPool = localStorage.getItem(POOL_STORAGE_KEY);
+      if (sharedPool && sharedPool.trim().length > 0) setPoolText(sharedPool);
+    } catch {}
+  }
+
+  function onStart() {
+    setError("");
+    try {
+      const newGame = createNewGame(poolText, parsedDeckSize);
+      setState(newGame);
+    } catch (e: any) {
+      setError(e?.message || "Could not start game.");
     }
   }
 
-  const round = state?.round ?? 0;
-  const called = state?.called?.length ?? 0;
-  const total = state?.deck?.length ?? 0;
-  const remaining = total - called;
+  function onReset() {
+    setError("");
+    setState({ started: false, round: 0, deck: [], remaining: [], called: [], latestDraw: [] });
+  }
+
+  function onNextDraw() {
+    setError("");
+    try {
+      const updated = nextDraw(state, parsedDrawSize);
+      setState(updated);
+    } catch (e: any) {
+      setError(e?.message || "Could not draw.");
+    }
+  }
+
+  async function onCopyLatestDraw() {
+    setError("");
+    const lines = state.latestDraw.map((x, i) => `${i + 1}. ${x}`).join("\n");
+    try {
+      await navigator.clipboard.writeText(lines);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = lines;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      el.remove();
+    }
+  }
 
   return (
-    <main className="mx-auto max-w-3xl p-4 md:p-8 space-y-4">
-      <div className="rounded-lg border p-4 space-y-2">
-        <h1 className="text-3xl font-bold">Grower Bingo — Caller</h1>
-
-        <div className="flex flex-wrap gap-2">
-          <Link className="rounded border px-3 py-2 font-semibold" href="/">
-            ← Back to Generator
+    <main style={{ padding: 20, maxWidth: 900, margin: "0 auto", fontFamily: "system-ui" }}>
+      {/* NAV */}
+      <div
+        style={{
+          marginBottom: 14,
+          padding: 12,
+          borderRadius: 10,
+          border: "1px solid #ddd",
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ fontWeight: 800, fontSize: 18 }}>Grower Bingo — Caller</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href="/" style={{ textDecoration: "none" }}>
+            <button style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 800 }}>
+              ⬅ Back to Generator
+            </button>
           </Link>
-
-          <a className="rounded border px-3 py-2 font-semibold" href="/" target="_blank" rel="noreferrer">
-            Generator (new tab)
-          </a>
+          <button
+            onClick={onReloadSharedPool}
+            style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #111", background: "#fff", color: "#111", fontWeight: 800 }}
+          >
+            Reload shared pool
+          </button>
         </div>
+      </div>
 
-        {deckTooBig && (
-          <div className="rounded border bg-red-50 p-3 text-sm">
-            Deck size ({deckSize}) is larger than your pool ({poolCount}). Reduce deck size or add more topics.
+      {error ? (
+        <div style={{ margin: "12px 0", padding: 12, borderRadius: 8, background: "#ffe9e9", border: "1px solid #ffb3b3" }}>
+          {error}
+        </div>
+      ) : null}
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div style={{ flex: "1 1 360px" }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+            Topic Pool (one per line) — Current: {poolCount}
           </div>
-        )}
-      </div>
 
-      <div className="space-y-2">
-        <div className="font-semibold">Topic Pool (one per line) — Current: {poolCount}</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+            <button onClick={onLoadDefaults} style={{ padding: "8px 10px" }}>
+              Load defaults
+            </button>
+            <button onClick={onReloadSharedPool} style={{ padding: "8px 10px" }}>
+              Reload shared pool
+            </button>
+          </div>
 
-        <div className="flex gap-2">
-          <button className="rounded border px-3 py-2 font-semibold" onClick={loadDefaults}>
-            Load defaults
-          </button>
-          <button className="rounded border px-3 py-2 font-semibold" onClick={clear}>
-            Clear
-          </button>
+          <textarea
+            value={poolText}
+            onChange={(e) => setPoolText(e.target.value)}
+            rows={12}
+            style={{
+              width: "100%",
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #ccc",
+              fontFamily: "monospace",
+              whiteSpace: "pre",
+            }}
+          />
         </div>
 
-        <textarea
-          className="h-56 w-full rounded border p-2 font-mono"
-          value={poolText}
-          onChange={(e) => setPoolText(e.target.value)}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className="block">
-          <div className="font-semibold">Deck size</div>
+        <div style={{ flex: "1 1 320px" }}>
+          <label style={{ display: "block", fontWeight: 700 }}>Deck size</label>
           <input
-            className="w-40 rounded border p-2"
-            type="number"
-            min={1}
             value={deckSize}
-            onChange={(e) => setDeckSize(Number(e.target.value || 1))}
+            onChange={(e) => setDeckSize(e.target.value)}
+            inputMode="numeric"
+            style={{ width: 160, padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
           />
-          <div className="text-sm opacity-80">How many items to pull from the pool for this game.</div>
-        </label>
-
-        <label className="block">
-          <div className="font-semibold">Draw size</div>
-          <input
-            className="w-40 rounded border p-2"
-            type="number"
-            min={1}
-            value={drawSize}
-            onChange={(e) => setDrawSize(Number(e.target.value || 1))}
-          />
-          <div className="text-sm opacity-80">How many to call each time you press “Next draw”.</div>
-        </label>
-
-        <div className="flex flex-wrap gap-2">
-          <button className="rounded border px-3 py-2 font-semibold" onClick={startGame} disabled={deckTooBig}>
-            Start Game
-          </button>
-          <button className="rounded border px-3 py-2 font-semibold" onClick={resetGame}>
-            Reset
-          </button>
-          <button className="rounded border px-3 py-2 font-semibold" onClick={nextDraw} disabled={!state}>
-            Next draw
-          </button>
-        </div>
-
-        <div className="text-sm">
-          <div>Round: {round}</div>
-          <div>
-            Called: {called} / {total}
+          <div style={{ margin: "6px 0 14px", opacity: 0.7 }}>
+            Must be ≤ pool count.
           </div>
-          <div>Remaining: {remaining}</div>
+
+          <label style={{ display: "block", fontWeight: 700 }}>Draw size</label>
+          <input
+            value={drawSize}
+            onChange={(e) => setDrawSize(e.target.value)}
+            inputMode="numeric"
+            style={{ width: 160, padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
+          />
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+            <button onClick={onStart} style={{ padding: "10px 12px" }}>
+              Start Game
+            </button>
+            <button onClick={onReset} style={{ padding: "10px 12px" }}>
+              Reset
+            </button>
+            <button onClick={onNextDraw} style={{ padding: "10px 12px" }}>
+              Next draw
+            </button>
+          </div>
+
+          <div style={{ marginTop: 14, lineHeight: 1.6 }}>
+            <div><b>Round:</b> {state.started ? state.round : 0}</div>
+            <div><b>Called:</b> {state.called.length} / {state.deck.length || parsedDeckSize}</div>
+            <div><b>Remaining:</b> {state.remaining.length}</div>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-2">
-        <h2 className="text-2xl font-bold">Latest draw (Round {round})</h2>
-        <ol className="list-decimal pl-6 space-y-1">
-          {latest.map((x) => (
-            <li key={x}>{x}</li>
-          ))}
-        </ol>
+      <hr style={{ margin: "18px 0" }} />
 
-        <button className="rounded border px-3 py-2 font-semibold" onClick={copyLatest} disabled={!latest.length}>
-          Copy latest draw
-        </button>
-      </div>
+      <h2 style={{ fontSize: 30, margin: "0 0 10px" }}>
+        Latest draw {state.started ? `(Round ${state.round})` : ""}
+      </h2>
+
+      {state.latestDraw.length ? (
+        <>
+          <ol style={{ fontSize: 22, marginTop: 0 }}>
+            {state.latestDraw.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ol>
+
+          <button onClick={onCopyLatestDraw} style={{ padding: "10px 12px" }}>
+            Copy latest draw
+          </button>
+        </>
+      ) : (
+        <div style={{ opacity: 0.7 }}>
+          Start the game, then press “Next draw”.
+        </div>
+      )}
+
+      <p style={{ marginTop: 18, opacity: 0.75 }}>
+        Pool is shared via localStorage key <code>{POOL_STORAGE_KEY}</code>.
+      </p>
     </main>
   );
 }
