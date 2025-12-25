@@ -60,7 +60,7 @@ export default function Page() {
     }
   }, []);
 
-  // Persist form
+  // Persist form (not the pool)
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -146,14 +146,29 @@ export default function Page() {
     setItemsText(DEFAULT_POOL_TEXT);
     try {
       localStorage.setItem(POOL_STORAGE_KEY, DEFAULT_POOL_TEXT);
-    } catch {}
+    } catch {
+      // ignore
+    }
   }
 
   function reloadSharedPool() {
     try {
       const shared = localStorage.getItem(POOL_STORAGE_KEY);
       if (shared != null) setItemsText(shared);
-    } catch {}
+    } catch {
+      // ignore
+    }
+  }
+
+  function clearPool() {
+    setPack(null);
+    setError("");
+    setItemsText("");
+    try {
+      localStorage.setItem(POOL_STORAGE_KEY, "");
+    } catch {
+      // ignore
+    }
   }
 
   return (
@@ -188,20 +203,6 @@ export default function Page() {
               Open Caller
             </button>
           </Link>
-          <a href="/caller" target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-            <button
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #111",
-                background: "#fff",
-                color: "#111",
-                fontWeight: 800,
-              }}
-            >
-              Caller (new tab)
-            </button>
-          </a>
         </div>
       </div>
 
@@ -302,4 +303,68 @@ export default function Page() {
         <button
           onClick={downloadCsv}
           disabled={!pack}
-          style
+          style={{
+            padding: "12px 16px",
+            borderRadius: 10,
+            border: "1px solid #111",
+            background: "white",
+            color: "#111",
+            fontWeight: 700,
+            cursor: pack ? "pointer" : "not-allowed",
+          }}
+        >
+          Download CSV (Roster)
+        </button>
+
+        <button
+          onClick={resetPoolToDefaults}
+          style={{
+            padding: "12px 16px",
+            borderRadius: 10,
+            border: "1px solid #ccc",
+            background: "white",
+            color: "#111",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Reset pool to defaults
+        </button>
+
+        <button
+          onClick={reloadSharedPool}
+          style={{
+            padding: "12px 16px",
+            borderRadius: 10,
+            border: "1px solid #ccc",
+            background: "white",
+            color: "#111",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Reload shared pool
+        </button>
+
+        <button
+          onClick={clearPool}
+          style={{
+            padding: "12px 16px",
+            borderRadius: 10,
+            border: "1px solid #ccc",
+            background: "white",
+            color: "#111",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Clear pool
+        </button>
+      </div>
+
+      <p style={{ marginTop: 12, opacity: 0.75 }}>
+        Pool is shared via localStorage key <code>{POOL_STORAGE_KEY}</code>. Edit it once, both pages match.
+      </p>
+    </main>
+  );
+}
