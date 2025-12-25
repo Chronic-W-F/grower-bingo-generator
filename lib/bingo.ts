@@ -1,7 +1,6 @@
 // lib/bingo.ts
 
 export const BINGO_ITEMS: string[] = [
-  // --- Core / Sponsor ---
   "Joe’s Grows",
   "Harvest Heroes",
   "Sponsor Shoutout",
@@ -13,7 +12,6 @@ export const BINGO_ITEMS: string[] = [
   "Pray for Yield",
   "Smoke Test",
 
-  // --- Water / pH / EC ---
   "pH Check",
   "pH Down",
   "pH Up",
@@ -25,7 +23,6 @@ export const BINGO_ITEMS: string[] = [
   "Airstone Check",
   "Root Check",
 
-  // --- Environment ---
   "VPD Check",
   "Leaf Temp Check",
   "Canopy Temp Check",
@@ -37,7 +34,6 @@ export const BINGO_ITEMS: string[] = [
   "Fan Speed Adjust",
   "Exhaust Check",
 
-  // --- Training / Canopy Work ---
   "Defoliation",
   "Lollipop",
   "Stretch Week",
@@ -49,7 +45,6 @@ export const BINGO_ITEMS: string[] = [
   "Trellis Net",
   "Support Stakes",
 
-  // --- Plant Health / Issues ---
   "Nute Burn",
   "Lockout",
   "Cal-Mag",
@@ -61,7 +56,6 @@ export const BINGO_ITEMS: string[] = [
   "Underwatered",
   "Herm Watch",
 
-  // --- Pests / IPM ---
   "IPM Spray",
   "Sticky Traps",
   "Fungus Gnats",
@@ -73,7 +67,6 @@ export const BINGO_ITEMS: string[] = [
   "Bud Rot Watch",
   "Sanitize Tools",
 
-  // --- Flower / Ripeness ---
   "Trichomes",
   "Amber Check",
   "Cloudy Check",
@@ -85,7 +78,6 @@ export const BINGO_ITEMS: string[] = [
   "Dry Back",
   "Calibrate Pen",
 
-  // --- Harvest / Dry / Cure ---
   "Harvest Day",
   "Wet Trim",
   "Dry Trim",
@@ -97,7 +89,6 @@ export const BINGO_ITEMS: string[] = [
   "Burp Jars",
   "Cure Check",
 
-  // --- Extra fun / filler ---
   "Photo Update",
   "Time-Lapse",
   "Grow Shop Run",
@@ -110,18 +101,16 @@ export const BINGO_ITEMS: string[] = [
   "Rotate Plants",
 ];
 
-// ---------- Types ----------
 export type BingoCard = {
   id: string;
-  grid: string[][]; // 5x5, center fixed to "Joe’s Grows" by default
+  grid: string[][];
 };
 
 export type BingoPack = {
   cards: BingoCard[];
-  itemsUsed: string[]; // pool used to build the pack (after shuffle/select)
+  itemsUsed: string[];
 };
 
-// ---------- Helpers ----------
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -135,11 +124,12 @@ function uniqByLower(arr: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const x of arr) {
-    const k = x.trim().toLowerCase();
-    if (!k) continue;
+    const v = (x ?? "").trim();
+    if (!v) continue;
+    const k = v.toLowerCase();
     if (!seen.has(k)) {
       seen.add(k);
-      out.push(x.trim());
+      out.push(v);
     }
   }
   return out;
@@ -150,7 +140,6 @@ function makeId(prefix = "CARD") {
 }
 
 function makeGridFromItems(items24: string[], centerText: string): string[][] {
-  // 24 items + center fixed
   const grid: string[][] = [
     ["", "", "", "", ""],
     ["", "", "", "", ""],
@@ -170,30 +159,42 @@ function makeGridFromItems(items24: string[], centerText: string): string[][] {
 }
 
 function gridKey(grid: string[][]): string {
-  // stringify with separators for uniqueness checks
   return grid.map((row) => row.join("|")).join("~");
 }
 
-// ---------- MAIN EXPORT ----------
 export function createBingoPack(items: string[], qty: number): BingoPack {
   const clean = uniqByLower(items);
-  if (clean.length < 24) {
-    throw new Error("Need at least 24 unique items to generate bingo cards.");
-  }
+  if (clean.length < 24) throw new Error("Need at least 24 unique items.");
 
   const count = Math.max(1, Math.min(500, Math.floor(qty || 1)));
   const cards: BingoCard[] = [];
 
-  // Try to avoid duplicate grids in a pack (best-effort)
   const seen = new Set<string>();
   const maxAttemptsPerCard = 200;
 
   for (let i = 0; i < count; i++) {
     let attempts = 0;
+    let pushed = false;
+
     while (attempts < maxAttemptsPerCard) {
       attempts++;
       const pick = shuffle(clean).slice(0, 24);
       const grid = makeGridFromItems(pick, "Joe’s Grows");
       const key = gridKey(grid);
+
       if (!seen.has(key)) {
         seen.add(key);
+        cards.push({ id: makeId("CARD"), grid });
+        pushed = true;
+        break;
+      }
+    }
+
+    if (!pushed) {
+      const pick = shuffle(clean).slice(0, 24);
+      cards.push({ id: makeId("CARD"), grid: makeGridFromItems(pick, "Joe’s Grows") });
+    }
+  }
+
+  return { cards, itemsUsed: clean };
+}
