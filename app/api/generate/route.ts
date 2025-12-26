@@ -34,9 +34,11 @@ export async function POST(req: Request) {
     });
 
     // IMPORTANT: route.ts must NOT contain JSX
-    // TypeScript can't infer that BingoPackPdf returns a <Document/> element,
-    // so we cast to satisfy react-pdf's renderToBuffer typing.
-    const doc = React.createElement(BingoPackPdf as any, { cards: pack.cards }) as any;
+    // Pass gridSize through to the PDF component (next step will use it to fix layout)
+    const doc = React.createElement(BingoPackPdf as any, {
+      cards: pack.cards,
+      gridSize: pack.meta.gridSize,
+    }) as any;
 
     const pdfBuffer = await renderToBuffer(doc);
     const pdfBase64 = pdfBuffer.toString("base64");
