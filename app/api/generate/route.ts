@@ -7,6 +7,16 @@ import { createBingoPackFromMasterPool, normalizeLines } from "@/lib/bingo";
 
 export const runtime = "nodejs";
 
+function getFreeCenterForGrid(gridSize: 3 | 4 | 5) {
+  // Your rule: 3x3 free center ON, 4x4 NO center, 5x5 free center ON
+  if (gridSize === 4) return false;
+  return true;
+}
+
+function requiredUniqueItems(gridSize: 3 | 4 | 5, freeCenter: boolean) {
+  return gridSize * gridSize - (freeCenter ? 1 : 0);
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -22,9 +32,23 @@ export async function POST(req: Request) {
         ? (gridSizeRaw as 3 | 4 | 5)
         : 5;
 
+    const freeCenter = getFreeCenterForGrid(gridSize);
+    const needed = requiredUniqueItems(gridSize, freeCenter);
+
     const masterPool = normalizeLines(itemsRaw);
-    if (masterPool.length < 10) {
-      return NextResponse.json({ error: "Not enough items in master pool." }, { status: 400 });
+
+    // FIX: validate against what the card actually needs
+    if (masterPool.length < needed) {
+      return NextResponse.json(
+        {
+          error: `Not enough items in master pool. Need at least ${needed} for a ${gridSize}x${gridSize} card.`,
+          needed,
+          gridSize,
+          freeCenter,
+          have: masterPool.length,
+        },
+        { status: 400 }
+      );
     }
 
     const pack = createBingoPackFromMasterPool({
@@ -34,7 +58,6 @@ export async function POST(req: Request) {
     });
 
     // IMPORTANT: route.ts must NOT contain JSX
-    // Pass gridSize through to the PDF component (next step will use it to fix layout)
     const doc = React.createElement(BingoPackPdf as any, {
       cards: pack.cards,
       gridSize: pack.meta.gridSize,
