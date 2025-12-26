@@ -1,82 +1,79 @@
-
+// app/api/generate/route.tsx
 import { NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 
-import { createBingoPack } from "@/lib/bingo";
+import { createBingoPackFromMasterPool } from "@/lib/bingo";
 import BingoPackPdf, { type BingoCard } from "@/pdf/BingoPackPdf";
 
 export const runtime = "nodejs";
 
-function normalizeLines(text: unknown) {
-  return String(text ?? "")
-    .split(/\r?\n/)
-    .map((x) => x.trim())
-    .filter(Boolean);
+type GenerateRequest = {
+  items?: string[]; // master pool (optional)
+  qty?: number;
+  quantity?: number; // legacy
+  gridSize?: 3 | 4 | 5;
+
+  // optional “skin” props (safe to ignore if your PDF component doesn’t use them)
+  packTitle?: string;
+  sponsorName?: string;
+  bannerUrl?: string;
+  logoUrl?: string;
+};
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as GenerateRequest;
 
-    const packTitle = String(body?.packTitle ?? "Grower Bingo Pack").trim();
-    const sponsorName = String(body?.sponsorName ?? "Sponsor").trim();
+    const qtyRaw = body.qty ?? body.quantity ?? 1;
+    const qty = clamp(Number(qtyRaw) || 1, 1, 500);
 
-    // allow null/undefined safely
-    const bannerUrl: string | undefined =
-      typeof body?.bannerUrl === "string" && body.bannerUrl.trim()
-        ? body.bannerUrl.trim()
-        : undefined;
+    const gridSize = (body.gridSize ?? 5) as 3 | 4 | 5;
 
-    const logoUrl: string | undefined =
-      typeof body?.logoUrl === "string" && body.logoUrl.trim()
-        ? body.logoUrl.trim()
-        : undefined;
+    // Master pool: either supplied, or empty -> pack generator can still run
+    // but you SHOULD pass items from the frontend.
+    const masterPool = Array.isArray(body.items) ? body.items : [];
 
-    const qty = Number(body?.qty ?? 25);
-    const items = Array.isArray(body?.items)
-      ? body.items.map((x: any) => String(x).trim()).filter(Boolean)
-      : normalizeLines(body?.items);
+    const pack = createBingoPackFromMasterPool({
+      masterPool,
+      qty,
+      gridSize,
+    });
 
-    if (!Number.isFinite(qty) || qty < 1 || qty > 500) {
-      return NextResponse.json({ error: "qty must be between 1 and 500" }, { status: 400 });
-    }
+    const packTitle = body.packTitle ?? "Grower Bingo Pack";
+    const sponsorName = body.sponsorName ?? "";
+    const bannerUrl = body.bannerUrl ?? "";
+    const logoUrl = body.logoUrl ?? "";
 
-    if (items.length < 24) {
-      return NextResponse.json({ error: `Need at least 24 items (got ${items.length})` }, { status: 400 });
-    }
+    // Your PDF expects cards shaped like {id, grid}
+    const cards: BingoCard[] = pack.cards;
 
-    // ✅ Unique-grid pack generation
-    const generated = createBingoPack(items, qty);
-
-    const cards: BingoCard[] = generated.cards.map((c) => ({
-      id: c.id,
-      grid: c.grid, // string[][]
-    }));
-
-    // ✅ Build PDF document (component returns <Document/>)
     const doc = (
       <BingoPackPdf
+        cards={cards}
         packTitle={packTitle}
         sponsorName={sponsorName}
         bannerUrl={bannerUrl}
         logoUrl={logoUrl}
-        cards={cards}
       />
     );
 
-    // ✅ FIX: TS typing mismatch in @react-pdf/renderer
-    const pdfBuffer = await renderToBuffer(doc as any);
+    const pdfBuffer = await renderToBuffer(doc);
 
-    const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
-
-    // roster CSV (card ids)
-    const csvLines = ["card_id", ...cards.map((c) => c.id)];
-    const csv = csvLines.join("\n");
-
-    return NextResponse.json({ pdfBase64, csv });
-  } catch (e: any) {
+    // If you also return a CSV, do it here (optional)
+    // For now just return minimal response needed by your app.
+    return NextResponse.json({
+      pdfBase64: Buffer.from(pdfBuffer).toString("base64"),
+      usedItems: pack.usedItems,
+      weeklyPool: pack.weeklyPool,
+      meta: pack.meta,
+    });
+  } catch (err: any) {
     return NextResponse.json(
-      { error: e?.message || "Unknown server error" },
+      { error: err?.message ?? "Unknown error" },
       { status: 500 }
     );
   }

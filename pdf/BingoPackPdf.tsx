@@ -1,97 +1,172 @@
 import React from "react";
-import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { ICON_MAP } from "@/lib/iconMap";
 
-export type BingoCard = {
+type BingoCard = {
   id: string;
-  grid: string[][]; // 5x5 with "FREE" at center
+  grid: string[][];
 };
 
-export type BingoPackPdfProps = {
-  packTitle: string;
-  sponsorName: string;
-  bannerUrl?: string;
-  logoUrl?: string;
+type Props = {
   cards: BingoCard[];
+  gridSize?: number;
+  sponsorImage?: string; // keep for later
 };
 
-const styles = StyleSheet.create({
-  page: { padding: 18 },
+const PAGE_PADDING = 36;
+const CONTENT_WIDTH = 540;
+const CONTENT_HEIGHT = 720;
 
-  headerWrap: { marginBottom: 10 },
-  title: { fontSize: 18, fontWeight: 700 },
-  subtitle: { fontSize: 10, marginTop: 2 },
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
 
-  banner: { width: "100%", height: 70, objectFit: "cover" as any, marginBottom: 8 },
+// Only show icons if ICON_MAP provides an emoji-like value.
+// If ICON_MAP returns a path like "/icons/joes.png", do NOT render it as text.
+function getPrintableIcon(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim();
+  if (!v) return null;
 
-  cardId: { fontSize: 10, marginBottom: 8 },
+  // If it looks like a path or filename, skip for now (we'll add real <Image/> later)
+  if (v.includes("/") || v.includes(".") || v.startsWith("http")) return null;
 
-  grid: { borderWidth: 2, borderColor: "#000" },
-  row: { flexDirection: "row" },
+  // Emoji-like: short, not a word
+  if (v.length <= 3) return v;
 
-  cellBase: {
-    flex: 1,
-    height: 72,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: "#000",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 6,
-  },
+  return null;
+}
 
-  lastCol: { borderRightWidth: 0 },
-  lastRow: { borderBottomWidth: 0 },
+export default function BingoPackPdf({ cards, gridSize: gridSizeProp }: Props) {
+  const inferred = cards?.[0]?.grid?.length ?? 5;
+  const gridSize = (gridSizeProp ?? inferred) as number;
 
-  cellText: { fontSize: 10, textAlign: "center" },
+  const cellSize = clamp(Math.floor(CONTENT_WIDTH / gridSize), 70, 110);
+  const gridWidth = cellSize * gridSize;
+  const gridHeight = cellSize * gridSize;
 
-  freeCell: { backgroundColor: "#eee" },
-  freeLabel: { fontSize: 10, fontWeight: 700, marginTop: 4 },
+  const topPad = Math.max(0, Math.floor((CONTENT_HEIGHT - 90 - gridHeight) / 2));
 
-  freeLogo: { width: 40, height: 40, objectFit: "contain" as any },
-});
-
-export default function BingoPackPdf(props: BingoPackPdfProps) {
-  const { packTitle, sponsorName, bannerUrl, logoUrl, cards } = props;
+  const styles = StyleSheet.create({
+    page: {
+      paddingTop: PAGE_PADDING,
+      paddingBottom: PAGE_PADDING,
+      paddingLeft: PAGE_PADDING,
+      paddingRight: PAGE_PADDING,
+      fontSize: 10,
+      fontFamily: "Helvetica",
+    },
+    header: {
+      alignItems: "center",
+      marginBottom: 8,
+    },
+    title: {
+      fontSize: 16,
+      fontWeight: "bold",
+      marginBottom: 4,
+    },
+    sub: {
+      fontSize: 10,
+      color: "#444",
+    },
+    spacer: {
+      height: topPad,
+    },
+    gridWrap: {
+      width: gridWidth,
+      height: gridHeight,
+      alignSelf: "center",
+      borderWidth: 2,
+      borderColor: "#000",
+    },
+    row: {
+      flexDirection: "row",
+      width: gridWidth,
+      height: cellSize,
+    },
+    cell: {
+      width: cellSize,
+      height: cellSize,
+      borderRightWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: "#000",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 6,
+    },
+    cellLastCol: {
+      borderRightWidth: 0,
+    },
+    cellLastRow: {
+      borderBottomWidth: 0,
+    },
+    cellInner: {
+      width: "100%",
+      height: "100%",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    icon: {
+      fontSize: 18,
+      marginBottom: 4,
+    },
+    label: {
+      fontSize: 10,
+      textAlign: "center",
+    },
+    footer: {
+      marginTop: 16,
+      alignItems: "center",
+      color: "#666",
+      fontSize: 9,
+    },
+  });
 
   return (
     <Document>
       {cards.map((card) => (
         <Page key={card.id} size="LETTER" style={styles.page}>
-          <View style={styles.headerWrap}>
-            {bannerUrl ? <Image src={bannerUrl} style={styles.banner} /> : null}
-            <Text style={styles.title}>{packTitle}</Text>
-            <Text style={styles.subtitle}>Sponsor: {sponsorName}</Text>
+          <View style={styles.header}>
+            <Text style={styles.title}>Grower Bingo</Text>
+            <Text style={styles.sub}>Card ID: {card.id}</Text>
           </View>
 
-          <Text style={styles.cardId}>Card ID: {card.id}</Text>
+          <View style={styles.spacer} />
 
-          <View style={styles.grid}>
-            {card.grid.map((row, rIdx) => (
-              <View key={rIdx} style={styles.row}>
-                {row.map((cell, cIdx) => {
-                  const isFree = cell === "FREE";
+          <View style={styles.gridWrap}>
+            {card.grid.map((row, rIdx) => {
+              const isLastRow = rIdx === card.grid.length - 1;
 
-                  // ✅ IMPORTANT: only push real style objects (no null/undefined)
-                  const cellStyles: any[] = [styles.cellBase];
-                  if (cIdx === 4) cellStyles.push(styles.lastCol);
-                  if (rIdx === 4) cellStyles.push(styles.lastRow);
-                  if (isFree) cellStyles.push(styles.freeCell);
+              return (
+                <View key={`r-${card.id}-${rIdx}`} style={styles.row}>
+                  {row.map((label, cIdx) => {
+                    const isLastCol = cIdx === row.length - 1;
 
-                  return (
-                    <View key={cIdx} style={cellStyles}>
-                      {isFree ? (
-                        <>
-                          {logoUrl ? <Image src={logoUrl} style={styles.freeLogo} /> : null}
-                          <Text style={styles.freeLabel}>{sponsorName}</Text>
-                        </>
-                      ) : (
-                        <Text style={styles.cellText}>{cell}</Text>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            ))}
+                    const cellStyle = [
+                      styles.cell,
+                      isLastCol ? styles.cellLastCol : null,
+                      isLastRow ? styles.cellLastRow : null,
+                    ];
+
+                    const rawIcon = (ICON_MAP as any)?.[label];
+                    const icon = getPrintableIcon(rawIcon);
+
+                    return (
+                      <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
+                        <View style={styles.cellInner}>
+                          {icon ? <Text style={styles.icon}>{icon}</Text> : null}
+                          <Text style={styles.label}>{label}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.footer}>
+            <Text>Text labels are the source of truth. Icons are decorative only.</Text>
           </View>
         </Page>
       ))}
