@@ -1,10 +1,9 @@
-// app/api/generate/route.ts
-// Accepts: items (newline string), qty, gridSize (3|4|5)
-// Returns: pdfBase64, csv, usedItems, weeklyPool, meta
+import React from "react";
 import { NextResponse } from "next/server";
-import { createBingoPackFromMasterPool, normalizeLines } from "@/lib/bingo";
 import { renderToBuffer } from "@react-pdf/renderer";
-import BingoPackPdf from "@/pdf/BingoPackPdf"; // adjust if your default export differs
+
+import BingoPackPdf from "@/pdf/BingoPackPdf";
+import { createBingoPackFromMasterPool, normalizeLines } from "@/lib/bingo";
 
 export const runtime = "nodejs";
 
@@ -17,9 +16,11 @@ export async function POST(req: Request) {
     const gridSizeRaw: number = Number(body.gridSize ?? 5);
 
     const qty = Number.isFinite(qtyRaw) ? Math.max(1, Math.min(500, qtyRaw)) : 1;
-    const gridSize = (gridSizeRaw === 3 || gridSizeRaw === 4 || gridSizeRaw === 5
-      ? gridSizeRaw
-      : 5) as 3 | 4 | 5;
+
+    const gridSize =
+      gridSizeRaw === 3 || gridSizeRaw === 4 || gridSizeRaw === 5
+        ? (gridSizeRaw as 3 | 4 | 5)
+        : 5;
 
     const masterPool = normalizeLines(itemsRaw);
     if (masterPool.length < 10) {
@@ -32,33 +33,37 @@ export async function POST(req: Request) {
       gridSize,
     });
 
-    // PDF
+    // IMPORTANT: route.ts must NOT contain JSX
     const pdfBuffer = await renderToBuffer(
-      // Keep your existing props here (banner/sponsor etc) when you re-add them
-      <BingoPackPdf cards={pack.cards} />
+      React.createElement(BingoPackPdf as any, { cards: pack.cards })
     );
     const pdfBase64 = pdfBuffer.toString("base64");
 
     // CSV roster: CardID + flattened grid
     const rows: string[] = [];
     rows.push(["CardID", "GridSize", "FreeCenter", "Cells"].join(","));
+
     for (const card of pack.cards) {
-      const flat = card.grid.flat().map((s) => `"${String(s).replaceAll('"', '""')}"`).join(";");
-      rows.push([card.id, String(pack.meta.gridSize), String(pack.meta.freeCenter), `"${flat}"`].join(","));
+      const flat = card.grid
+        .flat()
+        .map((s) => `"${String(s).replaceAll('"', '""')}"`)
+        .join(";");
+
+      rows.push(
+        [card.id, String(pack.meta.gridSize), String(pack.meta.freeCenter), `"${flat}"`].join(",")
+      );
     }
+
     const csv = rows.join("\n");
 
     return NextResponse.json({
       pdfBase64,
       csv,
-      usedItems: pack.usedItems,
       weeklyPool: pack.weeklyPool,
+      usedItems: pack.usedItems,
       meta: pack.meta,
     });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message ?? "Failed to generate." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err?.message ?? "Failed to generate." }, { status: 500 });
   }
 }
