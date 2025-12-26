@@ -2,20 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_POOL_TEXT } from "@/lib/defaultItems";
 
-const FORM_KEY = "grower-bingo:form:v3";
 const SHARED_POOL_KEY = "grower-bingo:pool:v1";
+const CALLER_STATE_KEY = "grower-bingo:caller:v1";
 
-type GeneratedPack = {
-  pdfBase64: string;
-  csv: string;
-  createdAt: number;
-  requestKey: string;
-  meta?: {
-    gridSize: number;
-    freeCenter: boolean;
-    weeklyPoolSize?: number;
-  };
+type CallerState = {
+  poolText: string;
+  deckSize: number;
+  drawSize: number;
+  round: number;
+  deck: string[];
+  called: string[];
 };
 
 function normalizeLines(text: string): string[] {
@@ -23,6 +21,19 @@ function normalizeLines(text: string): string[] {
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 function safeParse<T>(value: string | null): T | null {
@@ -34,339 +45,264 @@ function safeParse<T>(value: string | null): T | null {
   }
 }
 
-function downloadText(filename: string, text: string, mime = "text/plain") {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
+const styles = {
+  page: { padding: 16, maxWidth: 920, margin: "0 auto" } as React.CSSProperties,
+  card: {
+    border: "1px solid #ddd",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    background: "#fff",
+  } as React.CSSProperties,
+  headerRow: { display: "flex", gap: 12, flexWrap: "wrap" } as React.CSSProperties,
+  title: { margin: 0, fontSize: 22 } as React.CSSProperties,
+  buttonRow: { display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 } as React.CSSProperties,
+  primaryBtn: {
+    padding: "10px 14px",
+    border: "1px solid #000",
+    borderRadius: 12,
+    background: "#000",
+    color: "#fff",
+    fontWeight: 700,
+    cursor: "pointer",
+  } as React.CSSProperties,
+  outlineBtn: {
+    padding: "10px 14px",
+    border: "1px solid #000",
+    borderRadius: 12,
+    background: "transparent",
+    color: "#000",
+    fontWeight: 700,
+    cursor: "pointer",
+  } as React.CSSProperties,
+  smallBtn: {
+    padding: "8px 12px",
+    border: "1px solid #000",
+    borderRadius: 10,
+    background: "transparent",
+    color: "#000",
+    fontWeight: 600,
+    cursor: "pointer",
+  } as React.CSSProperties,
+  label: { display: "block", fontWeight: 700, marginBottom: 6 } as React.CSSProperties,
+  input: { width: 200, padding: 10, borderRadius: 10, border: "1px solid #ccc" } as React.CSSProperties,
+  textarea: { width: "100%", marginTop: 8, fontFamily: "monospace", padding: 10 } as React.CSSProperties,
+  stats: { fontWeight: 800, lineHeight: 1.7 } as React.CSSProperties,
+  hint: { fontSize: 12, color: "#555", marginTop: 6 } as React.CSSProperties,
+};
 
-function downloadPdfBase64(filename: string, base64: string) {
-  const byteChars = atob(base64);
-  const byteNumbers = new Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: "application/pdf" });
+export default function CallerPage() {
+  const [poolText, setPoolText] = useState<string>("");
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
+  const [deckSize, setDeckSize] = useState<number>(50);
+  const [drawSize, setDrawSize] = useState<number>(10);
 
-export default function GeneratorPage() {
-  const [itemsText, setItemsText] = useState<string>("");
+  const [round, setRound] = useState<number>(0);
+  const [deck, setDeck] = useState<string[]>([]);
+  const [called, setCalled] = useState<string[]>([]);
 
-  const [gridSize, setGridSize] = useState<3 | 4 | 5>(5);
-  const [qty, setQty] = useState<number>(1);
+  const pool = useMemo(() => normalizeLines(poolText), [poolText]);
+  const poolCount = pool.length;
 
-  // Sponsor fields (UI restored now; we’ll re-wire to PDF + squares after grids)
-  const [sponsorName, setSponsorName] = useState<string>("");
-  const [bannerImageUrl, setBannerImageUrl] = useState<string>("");
-  const [sponsorSquareText, setSponsorSquareText] = useState<string>("");
+  const remaining = Math.max(0, deck.length - called.length);
 
-  const [error, setError] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
-
-  const [pack, setPack] = useState<GeneratedPack | null>(null);
-
-  const poolCount = useMemo(() => normalizeLines(itemsText).length, [itemsText]);
-
-  // Load saved form on mount
+  // Load state
   useEffect(() => {
-    const saved = safeParse<{
-      itemsText: string;
-      gridSize: 3 | 4 | 5;
-      qty: number;
-      sponsorName: string;
-      bannerImageUrl: string;
-      sponsorSquareText: string;
-    }>(localStorage.getItem(FORM_KEY));
-
+    const saved = safeParse<CallerState>(localStorage.getItem(CALLER_STATE_KEY));
     if (saved) {
-      setItemsText(saved.itemsText ?? "");
-      setGridSize((saved.gridSize ?? 5) as 3 | 4 | 5);
-      setQty(Number(saved.qty ?? 1));
-
-      setSponsorName(saved.sponsorName ?? "");
-      setBannerImageUrl(saved.bannerImageUrl ?? "");
-      setSponsorSquareText(saved.sponsorSquareText ?? "");
+      setPoolText(saved.poolText ?? "");
+      setDeckSize(saved.deckSize ?? 50);
+      setDrawSize(saved.drawSize ?? 10);
+      setRound(saved.round ?? 0);
+      setDeck(Array.isArray(saved.deck) ? saved.deck : []);
+      setCalled(Array.isArray(saved.called) ? saved.called : []);
       return;
     }
 
-    // If no saved form, try to seed from shared pool if any
     const shared = localStorage.getItem(SHARED_POOL_KEY);
-    if (shared && shared.trim()) {
-      setItemsText(shared);
-    } else {
-      // Leave blank by default; user can paste or you can add a Load Defaults button later
-      setItemsText("");
-    }
+    if (shared && shared.trim()) setPoolText(shared);
+    else setPoolText(DEFAULT_POOL_TEXT);
   }, []);
 
-  // Persist form
+  // Persist state
   useEffect(() => {
-    localStorage.setItem(
-      FORM_KEY,
-      JSON.stringify({
-        itemsText,
-        gridSize,
-        qty,
-        sponsorName,
-        bannerImageUrl,
-        sponsorSquareText,
-      })
-    );
-  }, [itemsText, gridSize, qty, sponsorName, bannerImageUrl, sponsorSquareText]);
+    const state: CallerState = { poolText, deckSize, drawSize, round, deck, called };
+    localStorage.setItem(CALLER_STATE_KEY, JSON.stringify(state));
+  }, [poolText, deckSize, drawSize, round, deck, called]);
 
-  async function generatePack() {
-    setError("");
-    setLoading(true);
+  // Clamp deck/draw to pool size whenever pool changes
+  useEffect(() => {
+    if (poolCount <= 0) return;
 
-    try {
-      const requestKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const clampedDeck = clamp(deckSize, 1, poolCount);
+    if (clampedDeck !== deckSize) setDeckSize(clampedDeck);
 
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: itemsText,
-          qty,
-          gridSize,
+    const clampedDraw = clamp(drawSize, 1, clampedDeck);
+    if (clampedDraw !== drawSize) setDrawSize(clampedDraw);
 
-          // keep passing these for later wiring
-          sponsorName,
-          bannerImageUrl,
-          sponsorSquareText,
-          requestKey,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data?.error ?? "Failed to generate.");
-        setPack(null);
-        return;
-      }
-
-      // Sync Caller pool (Option B): use items actually used on cards
-      // If API returns usedItems, prefer that. Otherwise fall back to weeklyPool or the whole pool.
-      const used = Array.isArray(data?.usedItems) ? data.usedItems : null;
-      const weeklyPool = Array.isArray(data?.weeklyPool) ? data.weeklyPool : null;
-
-      const callerPoolText =
-        used?.length ? used.join("\n") : weeklyPool?.length ? weeklyPool.join("\n") : itemsText;
-
-      localStorage.setItem(SHARED_POOL_KEY, callerPoolText);
-
-      setPack({
-        pdfBase64: data.pdfBase64,
-        csv: data.csv,
-        createdAt: Date.now(),
-        requestKey,
-        meta: data?.meta,
-      });
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to generate.");
-      setPack(null);
-    } finally {
-      setLoading(false);
+    if (deck.length > 0 && deck.length > poolCount) {
+      const newDeck = deck.filter((x) => pool.includes(x)).slice(0, poolCount);
+      const newCalled = called.filter((x) => newDeck.includes(x));
+      setDeck(newDeck);
+      setCalled(newCalled);
+      setRound(Math.ceil(newCalled.length / Math.max(1, drawSize)));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poolCount]);
+
+  function loadDefaults() {
+    setPoolText(DEFAULT_POOL_TEXT);
   }
 
-  const metaLine = pack?.meta
-    ? `Grid: ${pack.meta.gridSize}×${pack.meta.gridSize} • Free center: ${String(
-        pack.meta.freeCenter
-      )} • Weekly pool size: ${String(pack.meta.weeklyPoolSize ?? "")}`.trim()
-    : "";
+  function reloadSharedPool() {
+    const shared = localStorage.getItem(SHARED_POOL_KEY);
+    if (shared && shared.trim()) setPoolText(shared);
+  }
+
+  function onDeckSizeChange(v: string) {
+    const n = Number(v);
+    const max = Math.max(1, poolCount);
+    const clamped = Number.isFinite(n) ? clamp(n, 1, max) : 1;
+    setDeckSize(clamped);
+    setDrawSize((d) => clamp(d, 1, clamped));
+  }
+
+  function onDrawSizeChange(v: string) {
+    const n = Number(v);
+    const max = Math.max(1, Math.min(deckSize, Math.max(1, poolCount)));
+    const clamped = Number.isFinite(n) ? clamp(n, 1, max) : 1;
+    setDrawSize(clamped);
+  }
+
+  function startGame() {
+    if (poolCount === 0) return;
+    const finalDeckSize = clamp(deckSize, 1, poolCount);
+    const newDeck = shuffle(pool).slice(0, finalDeckSize);
+    setDeck(newDeck);
+    setCalled([]);
+    setRound(0);
+  }
+
+  function resetGame() {
+    setDeck([]);
+    setCalled([]);
+    setRound(0);
+  }
+
+  function nextDraw() {
+    if (deck.length === 0) return;
+    const stillRemaining = deck.length - called.length;
+    if (stillRemaining <= 0) return;
+
+    const n = clamp(drawSize, 1, deck.length);
+    const toTake = Math.min(n, stillRemaining);
+
+    const ok = window.confirm(`Draw the next ${toTake} item(s)?`);
+    if (!ok) return;
+
+    const next = deck.slice(called.length, called.length + toTake);
+    const updatedCalled = [...called, ...next];
+    setCalled(updatedCalled);
+    setRound((r) => r + 1);
+  }
 
   return (
-    <div style={{ padding: 16, maxWidth: 900, margin: "0 auto" }}>
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 16,
-        }}
-      >
-        <h1 style={{ margin: 0 }}>Grower Bingo Generator</h1>
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.headerRow}>
+          <h1 style={styles.title}>Grower Bingo — Caller</h1>
+        </div>
 
-        <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
-          <Link
-            href="/caller"
-            style={{
-              padding: "10px 14px",
-              border: "1px solid #000",
-              borderRadius: 10,
-              textDecoration: "none",
-              display: "inline-block",
-            }}
-          >
-            Go to Caller
+        <div style={styles.buttonRow}>
+          <Link href="/" style={{ ...styles.primaryBtn, textDecoration: "none", display: "inline-block" }}>
+            ← Back to Generator
           </Link>
-
-          <button
-            onClick={() => downloadText("master-pool.txt", itemsText)}
-            style={{ padding: "10px 14px", border: "1px solid #000", borderRadius: 10 }}
-            type="button"
-          >
-            Export Pool (.txt)
+          <button onClick={reloadSharedPool} style={styles.outlineBtn}>
+            Reload shared pool
           </button>
         </div>
       </div>
 
-      <div style={{ marginBottom: 14 }}>
-        <h2 style={{ marginBottom: 8 }}>Master Pool (one per line)</h2>
+      <div style={styles.card}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>
+            Topic Pool (one per line) — Current: {poolCount}
+          </h2>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={loadDefaults} style={styles.smallBtn}>
+              Load defaults
+            </button>
+            <button onClick={reloadSharedPool} style={styles.smallBtn}>
+              Reload shared pool
+            </button>
+          </div>
+        </div>
+
         <textarea
-          value={itemsText}
-          onChange={(e) => setItemsText(e.target.value)}
+          value={poolText}
+          onChange={(e) => setPoolText(e.target.value)}
           rows={10}
-          style={{ width: "100%", fontFamily: "monospace" }}
-          placeholder="Paste your full master pool here (one item per line)."
+          style={styles.textarea}
         />
-        <div style={{ marginTop: 8, color: "#444" }}>Master pool items: {poolCount}</div>
       </div>
 
-      <div style={{ display: "grid", gap: 14, marginBottom: 14 }}>
-        <div>
-          <h2 style={{ marginBottom: 8 }}>Sponsor (optional)</h2>
+      <div style={styles.card}>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <label style={styles.label}>Deck size</label>
+            <input
+              value={deckSize}
+              type="number"
+              min={1}
+              max={Math.max(1, poolCount)}
+              onChange={(e) => onDeckSizeChange(e.target.value)}
+              style={styles.input}
+            />
+            <div style={styles.hint}>Must be ≤ pool count. (Auto-clamped)</div>
+          </div>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            <div>
-              <label style={{ display: "block", fontWeight: 600 }}>Sponsor name</label>
-              <input
-                value={sponsorName}
-                onChange={(e) => setSponsorName(e.target.value)}
-                style={{ width: "100%", padding: 8 }}
-                placeholder="Example: Joe’s Grows"
-              />
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontWeight: 600 }}>Banner image URL</label>
-              <input
-                value={bannerImageUrl}
-                onChange={(e) => setBannerImageUrl(e.target.value)}
-                style={{ width: "100%", padding: 8 }}
-                placeholder="https://..."
-              />
-              <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
-                We will wire this back into the PDF once grids + caller are stable.
-              </div>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontWeight: 600 }}>Sponsor square text</label>
-              <input
-                value={sponsorSquareText}
-                onChange={(e) => setSponsorSquareText(e.target.value)}
-                style={{ width: "100%", padding: 8 }}
-                placeholder="Example: Sponsor shoutout / square label"
-              />
-              <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
-                We will wire this into card generation next (replace one square per card).
-              </div>
-            </div>
+          <div>
+            <label style={styles.label}>Draw size</label>
+            <input
+              value={drawSize}
+              type="number"
+              min={1}
+              max={Math.max(1, Math.min(deckSize, Math.max(1, poolCount)))}
+              onChange={(e) => onDrawSizeChange(e.target.value)}
+              style={styles.input}
+            />
           </div>
         </div>
 
-        <div>
-          <h2 style={{ marginBottom: 8 }}>Card Settings</h2>
-
-          <div style={{ display: "grid", gap: 10, maxWidth: 360 }}>
-            <div>
-              <label style={{ display: "block", fontWeight: 600 }}>Card Size</label>
-              <select
-                value={gridSize}
-                onChange={(e) => setGridSize(Number(e.target.value) as 3 | 4 | 5)}
-                style={{ width: "100%", padding: 8 }}
-              >
-                <option value={3}>3×3</option>
-                <option value={4}>4×4</option>
-                <option value={5}>5×5</option>
-              </select>
-              <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
-                Defaults: 3×3 free center ON, 4×4 no center, 5×5 free center ON
-              </div>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontWeight: 600 }}>Quantity (cards)</label>
-              <input
-                value={qty}
-                onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
-                type="number"
-                min={1}
-                style={{ width: "100%", padding: 8 }}
-              />
-            </div>
-
-            <button
-              onClick={generatePack}
-              disabled={loading}
-              style={{ padding: "10px 14px", border: "1px solid #000", borderRadius: 10 }}
-              type="button"
-            >
-              {loading ? "Generating..." : "Generate Pack"}
-            </button>
-
-            {error ? <div style={{ color: "#b00020", fontWeight: 700 }}>{error}</div> : null}
-          </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+          <button onClick={startGame} style={styles.smallBtn}>
+            Start Game
+          </button>
+          <button onClick={resetGame} style={styles.smallBtn}>
+            Reset
+          </button>
+          <button onClick={nextDraw} style={styles.smallBtn}>
+            Next draw
+          </button>
         </div>
+
+        <div style={{ marginTop: 14, ...styles.stats }}>
+          <div>Round: {round}</div>
+          <div>Called: {called.length} / {deck.length}</div>
+          <div>Remaining: {remaining}</div>
+        </div>
+
+        {called.length > 0 ? (
+          <div style={{ marginTop: 14 }}>
+            <h3 style={{ marginBottom: 8 }}>Called so far</h3>
+            <ol>
+              {called.map((x, i) => (
+                <li key={`${x}-${i}`}>{x}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
       </div>
-
-      {pack ? (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 12,
-            padding: 16,
-            marginTop: 12,
-          }}
-        >
-          <h2 style={{ marginTop: 0 }}>Pack Ready</h2>
-          <div style={{ color: "#444", marginBottom: 10 }}>
-            {metaLine || "Pack generated."}
-          </div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={() => downloadPdfBase64("grower-bingo-pack.pdf", pack.pdfBase64)}
-              style={{ padding: "10px 14px", border: "1px solid #000", borderRadius: 10 }}
-              type="button"
-            >
-              Download PDF
-            </button>
-
-            <button
-              onClick={() => downloadText("grower-bingo-roster.csv", pack.csv, "text/csv")}
-              style={{ padding: "10px 14px", border: "1px solid #000", borderRadius: 10 }}
-              type="button"
-            >
-              Download CSV (Roster)
-            </button>
-          </div>
-
-          <div style={{ marginTop: 10, color: "#555" }}>
-            Caller pool has been synced to localStorage key <b>{SHARED_POOL_KEY}</b>.
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <Link href="/caller">Open Caller</Link>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
