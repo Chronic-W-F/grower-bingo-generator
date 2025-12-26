@@ -1,13 +1,5 @@
-// pdf/BingoPackPdf.tsx
 import React from "react";
-import {
-  Document,
-  Page,
-  View,
-  Text,
-  StyleSheet,
-  Image,
-} from "@react-pdf/renderer";
+import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import { ICON_MAP } from "@/lib/iconMap";
 
 type BingoCard = {
@@ -17,157 +9,158 @@ type BingoCard = {
 
 type Props = {
   cards: BingoCard[];
-
-  /**
-   * Newer API route props (preferred)
-   */
-  title?: string;
-  sponsorName?: string;
-  bannerImageUrl?: string | null;   // top banner
-  sponsorLogoUrl?: string | null;   // reserved for future center-logo logic if you want
-
-  /**
-   * Backwards compatible (older prop name)
-   */
-  sponsorImage?: string;            // top banner (older name)
-
-  accentColor?: string;             // "#2ecc71"
-  iconMap?: Record<string, string>; // item -> data URI (recommended)
+  gridSize?: number; // passed from API (pack.meta.gridSize)
+  sponsorImage?: string; // keep for later
 };
 
-export default function BingoPackPdf({
-  cards,
+const PAGE_PADDING = 36;
 
-  // New props
-  title,
-  sponsorName,
-  bannerImageUrl,
-  sponsorLogoUrl, // currently unused, but kept so your route can pass it safely
+// A safe, printable content box for Letter portrait.
+// React-PDF uses "pt" units; these numbers are friendly and stable.
+const CONTENT_WIDTH = 540;  // roughly 8.5" minus margins
+const CONTENT_HEIGHT = 720; // roughly 11" minus margins
 
-  // Old prop
-  sponsorImage,
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
 
-  accentColor = "#000000",
-  iconMap,
-}: Props) {
-  // Prefer new bannerImageUrl, fall back to sponsorImage
-  const bannerSrc = bannerImageUrl || sponsorImage || null;
+export default function BingoPackPdf({ cards, gridSize: gridSizeProp }: Props) {
+  // Prefer passed prop, otherwise infer from first card
+  const inferred = cards?.[0]?.grid?.length ?? 5;
+  const gridSize = (gridSizeProp ?? inferred) as number;
+
+  // Compute cell size from available width.
+  // Keep within reasonable bounds so 3x3 doesn't get comically huge.
+  const cellSize = clamp(Math.floor(CONTENT_WIDTH / gridSize), 70, 110);
+
+  const gridWidth = cellSize * gridSize;
+  const gridHeight = cellSize * gridSize;
+
+  // Center the grid vertically in the content area
+  const topPad = Math.max(0, Math.floor((CONTENT_HEIGHT - 90 - gridHeight) / 2)); // 90 = header space
 
   const styles = StyleSheet.create({
     page: {
-      padding: 24,
+      paddingTop: PAGE_PADDING,
+      paddingBottom: PAGE_PADDING,
+      paddingLeft: PAGE_PADDING,
+      paddingRight: PAGE_PADDING,
       fontSize: 10,
       fontFamily: "Helvetica",
     },
-
     header: {
-      marginBottom: 12,
-      textAlign: "center",
       alignItems: "center",
+      marginBottom: 8,
     },
-
-    sponsorBanner: {
-      width: "100%",
-      height: 50,
-      objectFit: "contain",
-      marginBottom: 6,
-    },
-
     title: {
-      fontSize: 20,
+      fontSize: 16,
       fontWeight: "bold",
-      color: accentColor,
+      marginBottom: 4,
     },
-
-    subTitle: {
+    sub: {
       fontSize: 10,
-      marginTop: 2,
-      color: accentColor,
-      opacity: 0.9,
+      color: "#444",
     },
-
-    cardId: {
-      fontSize: 9,
-      marginTop: 4,
-      color: accentColor,
+    spacer: {
+      height: topPad,
     },
-
-    grid: {
-      display: "flex",
-      flexDirection: "row",
-      flexWrap: "wrap",
-      width: "100%",
+    gridWrap: {
+      width: gridWidth,
+      height: gridHeight,
+      alignSelf: "center",
       borderWidth: 2,
-      borderColor: accentColor,
+      borderColor: "#000",
     },
-
+    row: {
+      flexDirection: "row",
+      width: gridWidth,
+      height: cellSize,
+    },
     cell: {
-      width: "20%",
-      height: 80,
-      borderWidth: 1,
-      borderColor: accentColor,
+      width: cellSize,
+      height: cellSize,
+      borderRightWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: "#000",
       alignItems: "center",
       justifyContent: "center",
-      padding: 4,
-      position: "relative",
+      padding: 6,
     },
-
-    cellText: {
-      fontSize: 9,
+    // Remove right border on last cell in a row
+    cellLastCol: {
+      borderRightWidth: 0,
+    },
+    // Remove bottom border on last row
+    rowLast: {},
+    cellLastRow: {
+      borderBottomWidth: 0,
+    },
+    cellInner: {
+      width: "100%",
+      height: "100%",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    icon: {
+      fontSize: 18,
+      marginBottom: 4,
+    },
+    label: {
+      fontSize: 10,
       textAlign: "center",
-      zIndex: 2,
     },
-
-    // ✅ No transform; numeric center inside an 80px tall cell:
-    // icon size = 36, so centered top/left = (80-36)/2 = 22
-    // width is cell-dependent, but 22 looks centered enough visually as a watermark
-    watermarkIcon: {
-      position: "absolute",
-      width: 36,
-      height: 36,
-      opacity: 0.12,
-      top: 22,
-      left: 22,
-      zIndex: 1,
+    footer: {
+      marginTop: 16,
+      alignItems: "center",
+      color: "#666",
+      fontSize: 9,
     },
   });
-
-  const displayTitle = (title && title.trim()) ? title.trim() : "Grower Bingo";
-  const displaySponsor = (sponsorName && sponsorName.trim()) ? sponsorName.trim() : "";
 
   return (
     <Document>
       {cards.map((card) => (
-        <Page size="LETTER" style={styles.page} key={card.id}>
-          {/* Header */}
+        <Page key={card.id} size="LETTER" style={styles.page}>
           <View style={styles.header}>
-            {bannerSrc ? (
-              <Image src={bannerSrc} style={styles.sponsorBanner} />
-            ) : null}
-
-            <Text style={styles.title}>{displayTitle}</Text>
-
-            {displaySponsor ? (
-              <Text style={styles.subTitle}>{displaySponsor}</Text>
-            ) : null}
-
-            <Text style={styles.cardId}>Card ID: {card.id}</Text>
+            <Text style={styles.title}>Grower Bingo</Text>
+            <Text style={styles.sub}>Card ID: {card.id}</Text>
           </View>
 
-          {/* Bingo Grid */}
-          <View style={styles.grid}>
-            {card.grid.flat().map((item, idx) => {
-              const iconSrc = (iconMap && iconMap[item]) || ICON_MAP[item];
+          <View style={styles.spacer} />
+
+          <View style={styles.gridWrap}>
+            {card.grid.map((row, rIdx) => {
+              const isLastRow = rIdx === card.grid.length - 1;
 
               return (
-                <View style={styles.cell} key={`${card.id}-${idx}`}>
-                  {iconSrc ? (
-                    <Image src={iconSrc} style={styles.watermarkIcon} />
-                  ) : null}
-                  <Text style={styles.cellText}>{item}</Text>
+                <View key={`r-${card.id}-${rIdx}`} style={styles.row}>
+                  {row.map((label, cIdx) => {
+                    const isLastCol = cIdx === row.length - 1;
+
+                    const cellStyle = [
+                      styles.cell,
+                      isLastCol ? styles.cellLastCol : null,
+                      isLastRow ? styles.cellLastRow : null,
+                    ];
+
+                    const icon = ICON_MAP?.[label];
+
+                    return (
+                      <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
+                        <View style={styles.cellInner}>
+                          {icon ? <Text style={styles.icon}>{icon}</Text> : null}
+                          <Text style={styles.label}>{label}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
               );
             })}
+          </View>
+
+          <View style={styles.footer}>
+            <Text>Text labels are the source of truth. Icons are decorative only.</Text>
           </View>
         </Page>
       ))}
