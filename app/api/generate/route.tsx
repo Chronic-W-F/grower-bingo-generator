@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 
 import { createBingoPackFromMasterPool } from "@/lib/bingo";
-import BingoPackPdf, { type BingoCard } from "@/pdf/BingoPackPdf";
+import type { BingoCard } from "@/lib/bingo"; // ✅ type belongs here
+import BingoPackPdf from "@/pdf/BingoPackPdf"; // ✅ default export only
 
 export const runtime = "nodejs";
 
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
     const bannerUrl = body.bannerUrl ?? "";
     const logoUrl = body.logoUrl ?? "";
 
-    // Your PDF expects cards shaped like {id, grid}
+    // Ensure cards match the expected shape for the PDF: { id, grid }
     const cards: BingoCard[] = pack.cards;
 
     const doc = (
@@ -63,8 +64,6 @@ export async function POST(req: Request) {
 
     const pdfBuffer = await renderToBuffer(doc);
 
-    // If you also return a CSV, do it here (optional)
-    // For now just return minimal response needed by your app.
     return NextResponse.json({
       pdfBase64: Buffer.from(pdfBuffer).toString("base64"),
       usedItems: pack.usedItems,
