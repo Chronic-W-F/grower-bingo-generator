@@ -1,7 +1,4 @@
 // app/api/generate/route.ts
-// ✅ IMPORTANT: this file must NOT export anything except allowed Next Route exports.
-// ✅ Do NOT export BingoPackPdf from here (even accidentally).
-
 import React from "react";
 import { NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
@@ -39,10 +36,14 @@ export async function POST(req: Request) {
       gridSize,
     });
 
-    // ✅ Avoid JSX in route files to prevent Next "invalid Route export field" issues.
-    const doc = React.createElement(BingoPackPdf as any, { cards: pack.cards });
+    // ✅ BingoPackPdf already returns a <Document>...</Document>
+    // So we must pass it directly to renderToBuffer.
+    const doc = React.createElement(BingoPackPdf as any, {
+      cards: pack.cards,
+      gridSize,
+    });
 
-    const pdfBuffer = await renderToBuffer(doc);
+    const pdfBuffer = await renderToBuffer(doc as any);
 
     return NextResponse.json({
       pdfBase64: Buffer.from(pdfBuffer).toString("base64"),
