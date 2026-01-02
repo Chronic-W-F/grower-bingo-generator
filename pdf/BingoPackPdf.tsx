@@ -12,17 +12,14 @@ type Props = {
   cards: BingoCard[];
   gridSize?: number;
 
-  // Header + sponsor controls
-  title?: string;                 // e.g. "Grower Bingo"
-  sponsorName?: string;           // e.g. "Chronic Worm Genetics"
-  bannerImageUrl?: string;        // absolute URL or /public path (needs assetBaseUrl)
-  sponsorLogoUrl?: string;        // absolute URL or /public path (needs assetBaseUrl)
+  // Optional (weekly style)
+  title?: string;
+  sponsorName?: string;
+  bannerImageUrl?: string;
+  sponsorLogoUrl?: string;
+  backgroundImageUrl?: string;
 
-  // Weekly styling
-  backgroundImageUrl?: string;    // absolute URL or /public path (needs assetBaseUrl)
-
-  // IMPORTANT for server-side PDF render:
-  // If you use /icons/... or /uploads/... this must be the site origin:
+  // REQUIRED if you use "/icons/..." or any "/public" path:
   // e.g. "https://grower-bingo-generator.vercel.app"
   assetBaseUrl?: string;
 };
@@ -35,43 +32,37 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-// If ICON_MAP contains an emoji, allow it (tight filter)
-function getPrintableEmoji(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const v = value.trim();
-  if (!v) return null;
-
-  // If it looks like a file path/url, it's not an emoji
-  if (v.includes("/") || v.includes(".") || v.startsWith("http")) return null;
-
-  // Block CJK ranges (the “mystery character” issue)
-  if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(v)) return null;
-
-  // Reject letters/numbers
-  if (/[\p{L}\p{N}]/u.test(v)) return null;
-
-  // Keep it short
-  if (v.length <= 4) return v;
-
-  return null;
-}
-
 function resolveAsset(urlOrPath?: string, assetBaseUrl?: string) {
   if (!urlOrPath) return null;
   const v = urlOrPath.trim();
   if (!v) return null;
 
-  // Already absolute
   if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("data:")) return v;
 
-  // Looks like a /public path
+  // /public path needs base url to become absolute for server PDF rendering
   if (v.startsWith("/")) {
-    // Needs base URL to become absolute for server-side rendering
     if (!assetBaseUrl) return null;
     return `${assetBaseUrl}${v}`;
   }
 
-  // Otherwise treat as invalid
+  return null;
+}
+
+// Optional: allow safe emoji if you ever put emoji values in ICON_MAP
+function getPrintableEmoji(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim();
+  if (!v) return null;
+
+  if (v.includes("/") || v.includes(".") || v.startsWith("http")) return null;
+
+  // block “mystery characters”
+  if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(v)) return null;
+
+  if (/[\p{L}\p{N}]/u.test(v)) return null;
+
+  if (v.length <= 4) return v;
+
   return null;
 }
 
@@ -85,6 +76,8 @@ export default function BingoPackPdf({
   backgroundImageUrl,
   assetBaseUrl,
 }: Props) {
+  const e = React.createElement;
+
   const inferred = cards?.[0]?.grid?.length ?? 5;
   const gridSize = (gridSizeProp ?? inferred) as number;
 
@@ -105,14 +98,13 @@ export default function BingoPackPdf({
       position: "relative",
     },
 
-    // Background behind everything
     pageBg: {
       position: "absolute",
       left: 0,
       top: 0,
       width: "100%",
       height: "100%",
-      opacity: 0.18, // keep subtle so text is readable
+      opacity: 0.18,
     },
 
     header: {
@@ -179,94 +171,9 @@ export default function BingoPackPdf({
       alignSelf: "center",
       borderWidth: 2,
       borderColor: "#000",
-      backgroundColor: "rgba(255,255,255,0.88)", // keeps squares readable even with bg
+      backgroundColor: "rgba(255,255,255,0.88)",
     },
 
     row: {
       flexDirection: "row",
       width: gridWidth,
-      height: cellSize,
-    },
-
-    cell: {
-      width: cellSize,
-      height: cellSize,
-      borderRightWidth: 1,
-      borderBottomWidth: 1,
-      borderColor: "#000",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 6,
-      backgroundColor: "#fff", // ✅ makes squares clean (no background inside)
-    },
-
-    cellLastCol: { borderRightWidth: 0 },
-    cellLastRow: { borderBottomWidth: 0 },
-
-    cellInner: {
-      width: "100%",
-      height: "100%",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-
-    iconImage: {
-      width: 28,
-      height: 28,
-      marginBottom: 4,
-      objectFit: "contain",
-    },
-
-    iconEmoji: {
-      fontSize: 18,
-      marginBottom: 4,
-    },
-
-    label: {
-      fontSize: 10,
-      textAlign: "center",
-      lineHeight: 1.15,
-    },
-
-    footer: {
-      marginTop: 14,
-      alignItems: "center",
-      color: "#666",
-      fontSize: 9,
-    },
-  });
-
-  const bannerSrc = resolveAsset(bannerImageUrl, assetBaseUrl);
-  const sponsorLogoSrc = resolveAsset(sponsorLogoUrl, assetBaseUrl);
-  const bgSrc = resolveAsset(backgroundImageUrl, assetBaseUrl);
-
-  return (
-    <Document>
-      {cards.map((card) => (
-        <Page key={card.id} size="LETTER" style={styles.page}>
-          {/* ✅ Background image (optional) */}
-          {bgSrc ? <Image src={bgSrc} style={styles.pageBg} /> : null}
-
-          <View style={styles.header}>
-            {/* ✅ Banner image (optional) */}
-            {bannerSrc ? (
-              <View style={styles.bannerWrap}>
-                <Image src={bannerSrc} style={styles.banner} />
-              </View>
-            ) : null}
-
-            <View style={styles.headerRow}>
-              <View style={styles.titleBlock}>
-                <Text style={styles.title}>{title}</Text>
-                <Text style={styles.sub}>Card ID: {card.id}</Text>
-                {sponsorName ? <Text style={styles.sponsor}>Sponsor: {sponsorName}</Text> : null}
-              </View>
-
-              {/* ✅ Sponsor logo (optional) */}
-              {sponsorLogoSrc ? <Image src={sponsorLogoSrc} style={styles.sponsorLogo} /> : null}
-            </View>
-          </View>
-
-          <View style={styles.spacer} />
-
-          <View style={styles.grid
