@@ -39,15 +39,13 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 function makeId(prefix = "card") {
-  // stable enough for bingo pack IDs
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function makeGridFrom24(items24: string[]): string[][] {
-  // 5x5 with center fixed
-  // Fill row-major skipping center
   const grid: string[][] = Array.from({ length: 5 }, () => Array(5).fill(""));
   let k = 0;
+
   for (let r = 0; r < 5; r++) {
     for (let c = 0; c < 5; c++) {
       if (r === 2 && c === 2) {
@@ -61,7 +59,6 @@ function makeGridFrom24(items24: string[]): string[][] {
 }
 
 function buildRosterCsv(cards: BingoCard[]) {
-  // CardId + 25 cells row-major
   const header = ["cardId", ...Array.from({ length: 25 }, (_, i) => `cell${i + 1}`)];
   const lines: string[] = [];
   lines.push(header.join(","));
@@ -90,6 +87,7 @@ export async function POST(req: Request) {
 
     const qty = clamp(safeInt(body?.qty, 25), 1, 500);
 
+    // Expect array of strings from client
     const pool = normalizeItems(body?.items);
 
     if (pool.length < 24) {
@@ -107,26 +105,19 @@ export async function POST(req: Request) {
     for (let i = 0; i < qty; i++) {
       const pick = shuffle(pool).slice(0, 24);
 
-      // track used items (exclude center label)
       for (const it of pick) usedSet.add(it);
-
-      const grid = makeGridFrom24(pick);
 
       cards.push({
         id: makeId(`card${i + 1}`),
-        grid,
+        grid: makeGridFrom24(pick),
       });
     }
 
     const usedItems = Array.from(usedSet);
 
-    // No JSX in .ts file
+    // ✅ Keep .ts (no JSX). Cast to any to satisfy react-pdf strict typing.
     const pdfBuffer = await renderToBuffer(
-      React.createElement(BingoPackPdf as any, {
-        cards,
-        // If your PDF component supports these props later, you can wire them here.
-        // sponsorImage: undefined,
-      })
+      React.createElement(BingoPackPdf as any, { cards }) as any
     );
 
     const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
