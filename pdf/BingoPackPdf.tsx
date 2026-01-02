@@ -1,12 +1,6 @@
 // pdf/BingoPackPdf.tsx
 import React from "react";
-import {
-  Document,
-  Page,
-  View,
-  Text,
-  StyleSheet,
-} from "@react-pdf/renderer";
+import { Document, Page, View, Text, StyleSheet, Image } from "@react-pdf/renderer";
 import { ICON_MAP } from "@/lib/iconMap";
 
 type BingoCard = {
@@ -16,109 +10,225 @@ type BingoCard = {
 
 type Props = {
   cards: BingoCard[];
+  gridSize?: number;
+  sponsorImage?: string; // keep for later
 };
 
-const GRID_SIZE = 5;
-const CELL_SIZE = 90;
+// Layout constants (LETTER)
 const PAGE_PADDING = 36;
+const CONTENT_WIDTH = 540;  // approx usable width after padding
+const CONTENT_HEIGHT = 720; // approx usable height after padding
 
-export default function BingoPackPdf({ cards }: Props) {
+const MAX_ICONS_PER_CARD = 10; // ✅ your requirement
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+// --- Deterministic hash + seeded shuffle (so same Card ID always picks same 10) ---
+function hashString(s: string) {
+  // FNV-1a-ish
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const a = [...arr];
+  let x = seed || 1;
+
+  for (let i = a.length - 1; i > 0; i--) {
+    // xorshift32
+    x ^= x << 13; x >>>= 0;
+    x ^= x >> 17; x >>>= 0;
+    x ^= x << 5;  x >>>= 0;
+
+    const j = x % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// If ICON_MAP value is a URL or /icons/... path, return it.
+// If it's empty or looks wrong, return null.
+function safeIconSrc(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim();
+  if (!v) return null;
+
+  // allow absolute URLs or public paths like "/icons/foo.png"
+  if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/")) return v;
+
+  // allow "icons/foo.png" (we'll normalize to "/icons/foo.png")
+  if (v.startsWith("icons/")) return `/${v}`;
+
+  return null;
+}
+
+export default function BingoPackPdf({ cards, gridSize: gridSizeProp }: Props) {
+  const inferred = cards?.[0]?.grid?.length ?? 5;
+  const gridSize = (gridSizeProp ?? inferred) as number;
+
+  const cellSize = clamp(Math.floor(CONTENT_WIDTH / gridSize), 70, 110);
+  const gridWidth = cellSize * gridSize;
+  const gridHeight = cellSize * gridSize;
+
+  // center the grid vertically-ish (leave room for header)
+  const topPad = Math.max(0, Math.floor((CONTENT_HEIGHT - 90 - gridHeight) / 2));
+
+  const styles = StyleSheet.create({
+    page: {
+      paddingTop: PAGE_PADDING,
+      paddingBottom: PAGE_PADDING,
+      paddingLeft: PAGE_PADDING,
+      paddingRight: PAGE_PADDING,
+      fontSize: 10,
+      fontFamily: "Helvetica",
+    },
+    header: {
+      alignItems: "center",
+      marginBottom: 8,
+    },
+    title: {
+      fontSize: 16,
+      fontWeight: "bold",
+      marginBottom: 4,
+    },
+    sub: {
+      fontSize: 10,
+      color: "#444",
+    },
+    spacer: {
+      height: topPad,
+    },
+    gridWrap: {
+      width: gridWidth,
+      height: gridHeight,
+      alignSelf: "center",
+      borderWidth: 2,
+      borderColor: "#000",
+    },
+    row: {
+      flexDirection: "row",
+      width: gridWidth,
+      height: cellSize,
+    },
+    cell: {
+      width: cellSize,
+      height: cellSize,
+      borderRightWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: "#000",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 6,
+    },
+    cellLastCol: {
+      borderRightWidth: 0,
+    },
+    cellLastRow: {
+      borderBottomWidth: 0,
+    },
+    cellInner: {
+      width: "100%",
+      height: "100%",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    // icon image box (kept small so it doesn't overpower text)
+    iconImg: {
+      width: Math.max(22, Math.floor(cellSize * 0.28)),
+      height: Math.max(22, Math.floor(cellSize * 0.28)),
+      marginBottom: 4,
+    },
+    label: {
+      fontSize: 10,
+      textAlign: "center",
+      lineHeight: 1.15,
+    },
+    footer: {
+      marginTop: 16,
+      alignItems: "center",
+      color: "#666",
+      fontSize: 9,
+    },
+  });
+
   return (
     <Document>
-      {cards.map((card) => (
-        <Page key={card.id} size="LETTER" style={styles.page}>
-          {/* HEADER */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Grower Bingo</Text>
-            <Text style={styles.sub}>Card ID: {card.id}</Text>
-          </View>
+      {cards.map((card) => {
+        // Build per-card set of labels that should show an icon (max 10)
+        const flatLabels = card.grid.flat();
 
-          {/* GRID */}
-          <View style={styles.grid}>
-            {card.grid.map((row, rIdx) => (
-              <View key={rIdx} style={styles.row}>
-                {row.map((label, cIdx) => {
-                  const hasIcon = Boolean(ICON_MAP[label]);
+        // Candidates are labels that actually have an icon mapping
+        const candidates = flatLabels.filter((label) => {
+          const src = safeIconSrc((ICON_MAP as any)[label]);
+          return Boolean(src);
+        });
 
-                  return (
-                    <View key={cIdx} style={styles.cell}>
-                      <View style={styles.cellInner}>
-                        {hasIcon && (
-                          <Text style={styles.icon}>■</Text>
-                        )}
-                        <Text style={styles.label}>{label}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            ))}
-          </View>
+        // Choose up to 10, deterministically based on card.id
+        const seed = hashString(card.id);
+        const chosenLabels = new Set(
+          seededShuffle(candidates, seed).slice(0, Math.min(MAX_ICONS_PER_CARD, candidates.length))
+        );
 
-          {/* FOOTER */}
-          <View style={styles.footer}>
-            <Text>
-              Text labels are the source of truth. Icons are decorative only.
-            </Text>
-          </View>
-        </Page>
-      ))}
+        return (
+          <Page key={card.id} size="LETTER" style={styles.page}>
+            <View style={styles.header}>
+              <Text style={styles.title}>Grower Bingo</Text>
+              <Text style={styles.sub}>Card ID: {card.id}</Text>
+            </View>
+
+            <View style={styles.spacer} />
+
+            <View style={styles.gridWrap}>
+              {card.grid.map((row, rIdx) => {
+                const isLastRow = rIdx === card.grid.length - 1;
+
+                return (
+                  <View key={`r-${card.id}-${rIdx}`} style={styles.row}>
+                    {row.map((label, cIdx) => {
+                      const isLastCol = cIdx === row.length - 1;
+
+                      const cellStyle = [
+                        styles.cell,
+                        isLastCol ? styles.cellLastCol : null,
+                        isLastRow ? styles.cellLastRow : null,
+                      ];
+
+                      const iconSrc = safeIconSrc((ICON_MAP as any)[label]);
+                      const showIcon = Boolean(iconSrc) && chosenLabels.has(label);
+
+                      return (
+                        <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
+                          <View style={styles.cellInner}>
+                            {showIcon ? (
+                              <Image
+                                src={iconSrc as string}
+                                style={styles.iconImg as any}
+                              />
+                            ) : null}
+
+                            <Text style={styles.label}>{label}</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+
+            <View style={styles.footer}>
+              <Text>Text labels are the source of truth. Icons are decorative only.</Text>
+              <Text>Max icons per card: {MAX_ICONS_PER_CARD}</Text>
+            </View>
+          </Page>
+        );
+      })}
     </Document>
   );
 }
-
-const styles = StyleSheet.create({
-  page: {
-    padding: PAGE_PADDING,
-    fontFamily: "Helvetica",
-    fontSize: 10,
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  sub: {
-    fontSize: 10,
-    color: "#555",
-  },
-  grid: {
-    alignSelf: "center",
-    borderWidth: 2,
-    borderColor: "#000",
-  },
-  row: {
-    flexDirection: "row",
-  },
-  cell: {
-    width: CELL_SIZE,
-    height: CELL_SIZE,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: "#000",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 6,
-  },
-  cellInner: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  icon: {
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  label: {
-    fontSize: 9,
-    textAlign: "center",
-  },
-  footer: {
-    marginTop: 16,
-    alignItems: "center",
-    fontSize: 9,
-    color: "#666",
-  },
-});
