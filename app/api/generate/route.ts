@@ -3,6 +3,8 @@ import React from "react";
 import { NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import BingoPackPdf from "@/pdf/BingoPackPdf";
+import path from "path";
+import { readFile } from "fs/promises";
 
 export const runtime = "nodejs";
 
@@ -70,34 +72,36 @@ function buildRosterCsv(cards: BingoCard[]) {
   };
 
   for (const c of cards) {
-    const flat = c.grid.flat(); // 25
+    const flat = c.grid.flat();
     lines.push([c.id, ...flat].map(csvEscape).join(","));
   }
   return lines.join("\n");
 }
 
-function toAbsoluteUrl(req: Request, maybeUrl: string): string {
-  const raw = (maybeUrl || "").trim();
-  if (!raw) return "";
+function inferMimeFromPath(p: string) {
+  const lower = p.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
+}
 
-  if (raw.startsWith("https://") || raw.startsWith("http://")) return raw;
+async function localPublicFileToDataUri(publicPath: string) {
+  // publicPath like "/banners/joes-grows.png"
+  const rel = publicPath.startsWith("/") ? publicPath.slice(1) : publicPath;
+  const abs = path.join(process.cwd(), "public", rel);
 
-  const origin = new URL(req.url).origin;
-
-  if (raw.startsWith("/")) return `${origin}${raw}`;
-  if (raw.startsWith("banners/")) return `${origin}/${raw}`;
-
-  return raw;
+  const buf = await readFile(abs);
+  const mime = inferMimeFromPath(publicPath);
+  return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
 async function fetchAsDataUri(url: string): Promise<string> {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`Banner fetch failed (${res.status})`);
-
   const contentType = res.headers.get("content-type") || "image/png";
   const buf = Buffer.from(await res.arrayBuffer());
-  const b64 = buf.toString("base64");
-  return `data:${contentType};base64,${b64}`;
+  return `data:${contentType};base64,${buf.toString("base64")}`;
 }
 
 export async function POST(req: Request) {
@@ -107,7 +111,7 @@ export async function POST(req: Request) {
     const title = typeof body?.title === "string" ? body.title : "Bingo Pack";
     const sponsorName = typeof body?.sponsorName === "string" ? body.sponsorName : "";
 
-    // If user leaves it blank, default to Joe’s banner in /public/banners
+    // If blank, default to the banner you uploaded into /public/banners
     const bannerRaw =
       typeof body?.bannerImageUrl === "string" && body.bannerImageUrl.trim()
         ? body.bannerImageUrl.trim()
@@ -140,11 +144,20 @@ export async function POST(req: Request) {
 
     const usedItems = Array.from(usedSet);
 
-    // Convert banner to data URI so react-pdf never needs network access
-    const bannerAbs = toAbsoluteUrl(req, bannerRaw);
+    // ✅ Banner: prefer local file read for /banners/...
     let bannerDataUri = "";
     try {
-      bannerDataUri = bannerAbs ? await fetchAsDataUri(bannerAbs) : "";
+      if (bannerRaw.startsWith("/banners/") || bannerRaw.startsWith("banners/")) {
+        const normalized = bannerRaw.startsWith("/") ? bannerRaw : `/${bannerRaw}`;
+        bannerDataUri = await localPublicFileToDataUri(normalized);
+      } else if (bannerRaw.startsWith("http://") || bannerRaw.startsWith("https://")) {
+        bannerDataUri = await fetchAsDataUri(bannerRaw);
+      } else if (bannerRaw.startsWith("/")) {
+        // other public file path
+        bannerDataUri = await localPublicFileToDataUri(bannerRaw);
+      } else {
+        bannerDataUri = "";
+      }
     } catch {
       bannerDataUri = "";
     }
@@ -153,7 +166,7 @@ export async function POST(req: Request) {
       React.createElement(BingoPackPdf as any, {
         cards,
         title,
-        bannerImageUrl: bannerDataUri, // data:image/... base64
+        bannerImageUrl: bannerDataUri, // data URI
       }) as any
     );
 
