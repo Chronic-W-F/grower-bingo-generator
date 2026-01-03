@@ -1,6 +1,13 @@
 // pdf/BingoPackPdf.tsx
 import React from "react";
-import { Document, Page, View, Text, StyleSheet, Image } from "@react-pdf/renderer";
+import {
+  Document,
+  Page,
+  View,
+  Text,
+  StyleSheet,
+  Image,
+} from "@react-pdf/renderer";
 import { ICON_MAP } from "@/lib/iconMap";
 
 type BingoCard = {
@@ -11,25 +18,15 @@ type BingoCard = {
 type Props = {
   cards: BingoCard[];
   gridSize?: number;
-
-  // ✅ New: banner URL served from /public
-  // Example: "/banners/joes-grows.png"
-  bannerImageUrl?: string;
-
-  sponsorImage?: string; // keep for later
+  bannerImageUrl?: string; // NEW: banner image URL/path (ex: "/banners/joes-grows.png")
 };
 
 // Layout constants (LETTER)
 const PAGE_PADDING = 36;
-const CONTENT_WIDTH = 540;  // approx usable width after padding
+const CONTENT_WIDTH = 540; // approx usable width after padding
 const CONTENT_HEIGHT = 720; // approx usable height after padding
 
-const MAX_ICONS_PER_CARD = 10; // ✅ your requirement
-
-// Banner constants
-const BANNER_HEIGHT = 90;
-const HEADER_TEXT_HEIGHT_EST = 38; // Grower Bingo + Card ID + margin-ish
-const HEADER_GAP = 10; // space below banner/header section
+const MAX_ICONS_PER_CARD = 10; // your requirement
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -52,9 +49,12 @@ function seededShuffle<T>(arr: T[], seed: number): T[] {
 
   for (let i = a.length - 1; i > 0; i--) {
     // xorshift32
-    x ^= x << 13; x >>>= 0;
-    x ^= x >> 17; x >>>= 0;
-    x ^= x << 5;  x >>>= 0;
+    x ^= x << 13;
+    x >>>= 0;
+    x ^= x >> 17;
+    x >>>= 0;
+    x ^= x << 5;
+    x >>>= 0;
 
     const j = x % (i + 1);
     [a[i], a[j]] = [a[j], a[i]];
@@ -69,10 +69,11 @@ function safeIconSrc(value: unknown): string | null {
   const v = value.trim();
   if (!v) return null;
 
-  // allow absolute URLs or public paths like "/icons/foo.png"
-  if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/")) return v;
+  // allow absolute URLs or public paths like "/icons/foo.png" or "/banners/foo.png"
+  if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/"))
+    return v;
 
-  // allow "icons/foo.png" (we'll normalize to "/icons/foo.png")
+  // allow "icons/foo.png" (normalize to "/icons/foo.png")
   if (v.startsWith("icons/")) return `/${v}`;
 
   return null;
@@ -90,15 +91,8 @@ export default function BingoPackPdf({
   const gridWidth = cellSize * gridSize;
   const gridHeight = cellSize * gridSize;
 
-  // Compute how much vertical space the "top section" uses
-  // If bannerImageUrl exists, reserve BANNER_HEIGHT.
-  const topSectionHeight =
-    (bannerImageUrl ? BANNER_HEIGHT : 0) +
-    HEADER_TEXT_HEIGHT_EST +
-    HEADER_GAP;
-
-  // Center the grid vertically-ish within remaining space
-  const topPad = Math.max(0, Math.floor((CONTENT_HEIGHT - topSectionHeight - gridHeight) / 2));
+  // center the grid vertically-ish (leave room for header)
+  const topPad = Math.max(0, Math.floor((CONTENT_HEIGHT - 90 - gridHeight) / 2));
 
   const styles = StyleSheet.create({
     page: {
@@ -110,14 +104,11 @@ export default function BingoPackPdf({
       fontFamily: "Helvetica",
     },
 
-    // Banner strip
+    // NEW banner styles
     bannerWrap: {
-      width: CONTENT_WIDTH,
-      height: BANNER_HEIGHT,
-      alignSelf: "center",
-      borderRadius: 10,
-      overflow: "hidden",
-      marginBottom: 10,
+      width: "100%",
+      height: 90,
+      marginBottom: 8,
     },
     bannerImg: {
       width: "100%",
@@ -127,7 +118,7 @@ export default function BingoPackPdf({
 
     header: {
       alignItems: "center",
-      marginBottom: HEADER_GAP,
+      marginBottom: 8,
     },
     title: {
       fontSize: 16,
@@ -138,11 +129,9 @@ export default function BingoPackPdf({
       fontSize: 10,
       color: "#444",
     },
-
     spacer: {
       height: topPad,
     },
-
     gridWrap: {
       width: gridWidth,
       height: gridHeight,
@@ -177,7 +166,6 @@ export default function BingoPackPdf({
       alignItems: "center",
       justifyContent: "center",
     },
-
     // icon image box (kept small so it doesn't overpower text)
     iconImg: {
       width: Math.max(22, Math.floor(cellSize * 0.28)),
@@ -212,19 +200,23 @@ export default function BingoPackPdf({
         // Choose up to 10, deterministically based on card.id
         const seed = hashString(card.id);
         const chosenLabels = new Set(
-          seededShuffle(candidates, seed).slice(0, Math.min(MAX_ICONS_PER_CARD, candidates.length))
+          seededShuffle(candidates, seed).slice(
+            0,
+            Math.min(MAX_ICONS_PER_CARD, candidates.length)
+          )
         );
 
         return (
           <Page key={card.id} size="LETTER" style={styles.page}>
-            {/* ✅ Banner */}
             {bannerImageUrl ? (
               <View style={styles.bannerWrap}>
-                <Image src={bannerImageUrl} style={styles.bannerImg as any} />
+                <Image
+                  src={bannerImageUrl}
+                  style={styles.bannerImg as any}
+                />
               </View>
             ) : null}
 
-            {/* Header text */}
             <View style={styles.header}>
               <Text style={styles.title}>Grower Bingo</Text>
               <Text style={styles.sub}>Card ID: {card.id}</Text>
