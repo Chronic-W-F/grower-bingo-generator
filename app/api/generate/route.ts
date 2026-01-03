@@ -116,8 +116,12 @@ export async function POST(req: Request) {
     const usedItems = Array.from(usedSet);
 
     // ✅ Keep .ts (no JSX). Cast to any to satisfy react-pdf strict typing.
+    // ✅ Pass bannerImageUrl, with default fallback to your uploaded file in /public/banners
     const pdfBuffer = await renderToBuffer(
-      React.createElement(BingoPackPdf as any, { cards }) as any
+      React.createElement(BingoPackPdf as any, {
+        cards,
+        bannerImageUrl: bannerImageUrl || "/banners/joes-grows.png",
+      }) as any
     );
 
     const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
