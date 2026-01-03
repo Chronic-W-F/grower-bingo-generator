@@ -39,9 +39,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 function makeId(prefix = "card") {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function makeGridFrom24(items24: string[]): string[][] {
@@ -78,23 +76,39 @@ function buildRosterCsv(cards: BingoCard[]) {
   return lines.join("\n");
 }
 
+function toAbsoluteUrl(req: Request, maybeUrl: string): string {
+  const raw = (maybeUrl || "").trim();
+  if (!raw) return "";
+
+  // already absolute
+  if (raw.startsWith("https://") || raw.startsWith("http://")) return raw;
+
+  // handle "/banners/..." from public folder
+  if (raw.startsWith("/")) {
+    const origin = new URL(req.url).origin;
+    return `${origin}${raw}`;
+  }
+
+  // handle "banners/..." (missing leading slash)
+  if (raw.startsWith("banners/")) {
+    const origin = new URL(req.url).origin;
+    return `${origin}/${raw}`;
+  }
+
+  return raw;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
     const title = typeof body?.title === "string" ? body.title : "Bingo Pack";
     const sponsorName = typeof body?.sponsorName === "string" ? body.sponsorName : "";
-
-    // IMPORTANT: expect "/banners/joes-grows.png" style paths (or full https URL)
-    const bannerImageUrl =
-      typeof body?.bannerImageUrl === "string" ? body.bannerImageUrl : "";
-
-    const sponsorLogoUrl =
-      typeof body?.sponsorLogoUrl === "string" ? body.sponsorLogoUrl : "";
+    const bannerImageUrl = typeof body?.bannerImageUrl === "string" ? body.bannerImageUrl : "";
+    const sponsorLogoUrl = typeof body?.sponsorLogoUrl === "string" ? body.sponsorLogoUrl : "";
 
     const qty = clamp(safeInt(body?.qty, 25), 1, 500);
 
-    // Expect array of strings from client
     const pool = normalizeItems(body?.items);
 
     if (pool.length < 24) {
@@ -121,9 +135,16 @@ export async function POST(req: Request) {
 
     const usedItems = Array.from(usedSet);
 
-    // Keep .ts (no JSX). Cast to any to satisfy react-pdf strict typing.
+    // IMPORTANT: make banner URL absolute so react-pdf can fetch it on the server
+    const bannerAbs = toAbsoluteUrl(req, bannerImageUrl);
+
+    // render PDF
     const pdfBuffer = await renderToBuffer(
-      React.createElement(BingoPackPdf as any, { cards, bannerImageUrl }) as any
+      React.createElement(BingoPackPdf as any, {
+        cards,
+        title,
+        bannerImageUrl: bannerAbs,
+      }) as any
     );
 
     const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
@@ -133,7 +154,7 @@ export async function POST(req: Request) {
       requestKey: `${Date.now()}`,
       title,
       sponsorName,
-      bannerImageUrl,
+      bannerImageUrl: bannerAbs,
       sponsorLogoUrl,
       qty,
       pdfBase64,
