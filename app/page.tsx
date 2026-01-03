@@ -1,3 +1,4 @@
+// app/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -51,7 +52,6 @@ function safeFileName(s: string) {
 }
 
 function downloadBase64Pdf(filename: string, base64: string) {
-  // Convert base64 to Blob
   const bin = atob(base64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -82,10 +82,12 @@ function downloadTextFile(filename: string, text: string, mime = "text/plain;cha
 export default function Page() {
   const [title, setTitle] = useState("Harvest Heroes Bingo");
   const [sponsorName, setSponsorName] = useState("Joe’s Grows");
-  const [bannerImageUrl, setBannerImageUrl] = useState("/banners/joes-grows.png");
+
+  // ✅ LOCKED: always use /banners/current.png
+  const [bannerImageUrl, setBannerImageUrl] = useState("/banners/current.png");
+
   const [sponsorLogoUrl, setSponsorLogoUrl] = useState("");
   const [qtyInput, setQtyInput] = useState("25");
-
   const [itemsText, setItemsText] = useState(DEFAULT_ITEMS);
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -145,7 +147,7 @@ export default function Page() {
         body: JSON.stringify({
           title,
           sponsorName,
-          bannerImageUrl,
+          bannerImageUrl, // ✅ always /banners/current.png unless you change it
           sponsorLogoUrl,
           qty,
           items: poolLines, // send array
@@ -183,10 +185,9 @@ export default function Page() {
         }
       }
 
-      // ✅ AUTO DOWNLOAD PDF
+      // Auto download PDF
       const filename = `${safeFileName(title)}-${nextPack.requestKey}.pdf`;
 
-      // Some mobile browsers are finicky; slight delay helps reliability.
       setTimeout(() => {
         try {
           downloadBase64Pdf(filename, data.pdfBase64);
@@ -264,7 +265,7 @@ export default function Page() {
             <input
               value={bannerImageUrl}
               onChange={(e) => setBannerImageUrl(e.target.value)}
-              placeholder="https://..."
+              placeholder="/banners/current.png"
               style={{
                 width: "100%",
                 padding: 12,
@@ -273,6 +274,9 @@ export default function Page() {
                 fontSize: 16,
               }}
             />
+            <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
+              Weekly swap: replace <b>public/banners/current.png</b> in GitHub. Keep this value unchanged.
+            </div>
           </div>
 
           <div>
