@@ -80,22 +80,24 @@ function toAbsoluteUrl(req: Request, maybeUrl: string): string {
   const raw = (maybeUrl || "").trim();
   if (!raw) return "";
 
-  // already absolute
   if (raw.startsWith("https://") || raw.startsWith("http://")) return raw;
 
-  // handle "/banners/..." from public folder
-  if (raw.startsWith("/")) {
-    const origin = new URL(req.url).origin;
-    return `${origin}${raw}`;
-  }
+  const origin = new URL(req.url).origin;
 
-  // handle "banners/..." (missing leading slash)
-  if (raw.startsWith("banners/")) {
-    const origin = new URL(req.url).origin;
-    return `${origin}/${raw}`;
-  }
+  if (raw.startsWith("/")) return `${origin}${raw}`;
+  if (raw.startsWith("banners/")) return `${origin}/${raw}`;
 
   return raw;
+}
+
+async function fetchAsDataUri(url: string): Promise<string> {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Banner fetch failed (${res.status})`);
+
+  const contentType = res.headers.get("content-type") || "image/png";
+  const buf = Buffer.from(await res.arrayBuffer());
+  const b64 = buf.toString("base64");
+  return `data:${contentType};base64,${b64}`;
 }
 
 export async function POST(req: Request) {
@@ -104,11 +106,14 @@ export async function POST(req: Request) {
 
     const title = typeof body?.title === "string" ? body.title : "Bingo Pack";
     const sponsorName = typeof body?.sponsorName === "string" ? body.sponsorName : "";
-    const bannerImageUrl = typeof body?.bannerImageUrl === "string" ? body.bannerImageUrl : "";
-    const sponsorLogoUrl = typeof body?.sponsorLogoUrl === "string" ? body.sponsorLogoUrl : "";
+
+    // If user leaves it blank, default to Joe’s banner in /public/banners
+    const bannerRaw =
+      typeof body?.bannerImageUrl === "string" && body.bannerImageUrl.trim()
+        ? body.bannerImageUrl.trim()
+        : "/banners/joes-grows.png";
 
     const qty = clamp(safeInt(body?.qty, 25), 1, 500);
-
     const pool = normalizeItems(body?.items);
 
     if (pool.length < 24) {
@@ -135,15 +140,20 @@ export async function POST(req: Request) {
 
     const usedItems = Array.from(usedSet);
 
-    // IMPORTANT: make banner URL absolute so react-pdf can fetch it on the server
-    const bannerAbs = toAbsoluteUrl(req, bannerImageUrl);
+    // Convert banner to data URI so react-pdf never needs network access
+    const bannerAbs = toAbsoluteUrl(req, bannerRaw);
+    let bannerDataUri = "";
+    try {
+      bannerDataUri = bannerAbs ? await fetchAsDataUri(bannerAbs) : "";
+    } catch {
+      bannerDataUri = "";
+    }
 
-    // render PDF
     const pdfBuffer = await renderToBuffer(
       React.createElement(BingoPackPdf as any, {
         cards,
         title,
-        bannerImageUrl: bannerAbs,
+        bannerImageUrl: bannerDataUri, // data:image/... base64
       }) as any
     );
 
@@ -154,8 +164,7 @@ export async function POST(req: Request) {
       requestKey: `${Date.now()}`,
       title,
       sponsorName,
-      bannerImageUrl: bannerAbs,
-      sponsorLogoUrl,
+      bannerImageUrl: bannerRaw,
       qty,
       pdfBase64,
       csv,
