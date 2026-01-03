@@ -39,7 +39,9 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 function makeId(prefix = "card") {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
 }
 
 function makeGridFrom24(items24: string[]): string[][] {
@@ -82,8 +84,13 @@ export async function POST(req: Request) {
 
     const title = typeof body?.title === "string" ? body.title : "Bingo Pack";
     const sponsorName = typeof body?.sponsorName === "string" ? body.sponsorName : "";
-    const bannerImageUrl = typeof body?.bannerImageUrl === "string" ? body.bannerImageUrl : "";
-    const sponsorLogoUrl = typeof body?.sponsorLogoUrl === "string" ? body.sponsorLogoUrl : "";
+
+    // IMPORTANT: expect "/banners/joes-grows.png" style paths (or full https URL)
+    const bannerImageUrl =
+      typeof body?.bannerImageUrl === "string" ? body.bannerImageUrl : "";
+
+    const sponsorLogoUrl =
+      typeof body?.sponsorLogoUrl === "string" ? body.sponsorLogoUrl : "";
 
     const qty = clamp(safeInt(body?.qty, 25), 1, 500);
 
@@ -104,7 +111,6 @@ export async function POST(req: Request) {
 
     for (let i = 0; i < qty; i++) {
       const pick = shuffle(pool).slice(0, 24);
-
       for (const it of pick) usedSet.add(it);
 
       cards.push({
@@ -115,13 +121,9 @@ export async function POST(req: Request) {
 
     const usedItems = Array.from(usedSet);
 
-    // ✅ Keep .ts (no JSX). Cast to any to satisfy react-pdf strict typing.
-    // ✅ Pass bannerImageUrl, with default fallback to your uploaded file in /public/banners
+    // Keep .ts (no JSX). Cast to any to satisfy react-pdf strict typing.
     const pdfBuffer = await renderToBuffer(
-      React.createElement(BingoPackPdf as any, {
-        cards,
-        bannerImageUrl: bannerImageUrl || "/banners/joes-grows.png",
-      }) as any
+      React.createElement(BingoPackPdf as any, { cards, bannerImageUrl }) as any
     );
 
     const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
