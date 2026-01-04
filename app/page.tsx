@@ -24,7 +24,6 @@ const SHARED_POOL_KEY = "grower-bingo:pool:v1";
 const LAST_GENERATED_PACK_KEY = "grower-bingo:lastGeneratedPack:v1";
 
 const DEFAULT_ITEMS = `Trellis net
-const DEFAULT_ITEMS = `Trellis net
 Lollipop
 Defoliate
 Stretch week
