@@ -1,7 +1,6 @@
 // pdf/BingoPackPdf.tsx
 import React from "react";
 import { Document, Page, View, Text, StyleSheet, Image } from "@react-pdf/renderer";
-import { ICON_MAP } from "@/lib/iconMap";
 
 type BingoCard = {
   id: string;
@@ -11,8 +10,11 @@ type BingoCard = {
 type Props = {
   cards: BingoCard[];
   gridSize?: number;
-  sponsorImage?: string; // kept for later
-  bannerImageUrl?: string;
+
+  // Banner sources (either works)
+  bannerImageUrl?: string; // can be data URI, https URL, or /path (if your pipeline supports it)
+  sponsorImage?: string; // legacy/alternate banner source (data URI or https URL)
+
   title?: string;
   sponsorName?: string;
 };
@@ -20,7 +22,7 @@ type Props = {
 const PAGE_PADDING = 36;
 const CONTENT_WIDTH = 540;
 
-// Banner tuning: keep readable and NEVER crop
+// Banner tuning: readable and never crop
 const BANNER_HEIGHT = 70;
 const BANNER_MARGIN_BOTTOM = 10;
 
@@ -28,21 +30,11 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-function safeIconSrc(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const v = value.trim();
-  if (!v) return null;
-
-  if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/")) return v;
-  if (v.startsWith("icons/")) return `/${v}`;
-
-  return null;
-}
-
 export default function BingoPackPdf({
   cards,
   gridSize: gridSizeProp,
   bannerImageUrl,
+  sponsorImage,
   title,
   sponsorName,
 }: Props) {
@@ -53,6 +45,9 @@ export default function BingoPackPdf({
   const gridWidth = cellSize * gridSize;
   const gridHeight = cellSize * gridSize;
 
+  // ✅ FIX: render banner from either prop (API currently produces a data URI into sponsorImage)
+  const bannerSrc = bannerImageUrl || sponsorImage;
+
   const styles = StyleSheet.create({
     page: {
       paddingTop: PAGE_PADDING,
@@ -62,13 +57,11 @@ export default function BingoPackPdf({
       fontSize: 10,
       fontFamily: "Helvetica",
     },
-
     header: {
       alignItems: "center",
       marginBottom: 12,
     },
 
-    // Wrap gives us a clean box for the banner
     bannerWrap: {
       width: "100%",
       height: BANNER_HEIGHT,
@@ -78,7 +71,7 @@ export default function BingoPackPdf({
       backgroundColor: "#ffffff",
     },
 
-    // "contain" prevents cropping entirely
+    // ✅ contain prevents cropping
     banner: {
       width: "100%",
       height: "100%",
@@ -89,11 +82,12 @@ export default function BingoPackPdf({
       fontSize: 16,
       fontWeight: "bold",
       marginBottom: 4,
+      textAlign: "center",
     },
-
     sub: {
       fontSize: 10,
       color: "#444",
+      textAlign: "center",
     },
 
     gridWrap: {
@@ -103,13 +97,11 @@ export default function BingoPackPdf({
       borderWidth: 2,
       borderColor: "#000",
     },
-
     row: {
       flexDirection: "row",
       width: gridWidth,
       height: cellSize,
     },
-
     cell: {
       width: cellSize,
       height: cellSize,
@@ -120,22 +112,12 @@ export default function BingoPackPdf({
       justifyContent: "center",
       padding: 6,
     },
-
     cellLastCol: {
       borderRightWidth: 0,
     },
-
     cellLastRow: {
       borderBottomWidth: 0,
     },
-
-    cellInner: {
-      width: "100%",
-      height: "100%",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-
     label: {
       fontSize: 10,
       textAlign: "center",
@@ -143,68 +125,59 @@ export default function BingoPackPdf({
     },
 
     footer: {
-      marginTop: 14,
+      marginTop: 12,
       alignItems: "center",
-      color: "#444",
+      color: "#111",
       fontSize: 9,
     },
   });
 
   return (
     <Document>
-      {cards.map((card) => {
-        return (
-          <Page key={card.id} size="LETTER" style={styles.page}>
-            <View style={styles.header}>
-              {bannerImageUrl ? (
-                <View style={styles.bannerWrap}>
-                  <Image src={bannerImageUrl} style={styles.banner as any} />
+      {cards.map((card) => (
+        <Page key={card.id} size="LETTER" style={styles.page}>
+          <View style={styles.header}>
+            {bannerSrc ? (
+              <View style={styles.bannerWrap}>
+                <Image src={bannerSrc} style={styles.banner as any} />
+              </View>
+            ) : null}
+
+            <Text style={styles.title}>{title || "Harvest Heroes Bingo"}</Text>
+            {sponsorName ? <Text style={styles.sub}>Sponsor: {sponsorName}</Text> : null}
+          </View>
+
+          <View style={styles.gridWrap}>
+            {card.grid.map((row, rIdx) => {
+              const isLastRow = rIdx === card.grid.length - 1;
+
+              return (
+                <View key={`r-${card.id}-${rIdx}`} style={styles.row}>
+                  {row.map((label, cIdx) => {
+                    const isLastCol = cIdx === row.length - 1;
+
+                    const cellStyle = [
+                      styles.cell,
+                      isLastCol ? styles.cellLastCol : null,
+                      isLastRow ? styles.cellLastRow : null,
+                    ];
+
+                    return (
+                      <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
+                        <Text style={styles.label}>{label}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
-              ) : null}
+              );
+            })}
+          </View>
 
-              <Text style={styles.title}>{title || "Harvest Heroes Bingo"}</Text>
-
-              {sponsorName ? <Text style={styles.sub}>Sponsor: {sponsorName}</Text> : null}
-            </View>
-
-            <View style={styles.gridWrap}>
-              {card.grid.map((row, rIdx) => {
-                const isLastRow = rIdx === card.grid.length - 1;
-
-                return (
-                  <View key={`r-${card.id}-${rIdx}`} style={styles.row}>
-                    {row.map((label, cIdx) => {
-                      const isLastCol = cIdx === row.length - 1;
-
-                      const cellStyle = [
-                        styles.cell,
-                        isLastCol ? styles.cellLastCol : null,
-                        isLastRow ? styles.cellLastRow : null,
-                      ];
-
-                      // Print-friendly PDF: NO icons rendered.
-                      // (Keeping ICON_MAP import available if you re-enable later.)
-                      // const iconSrc = safeIconSrc((ICON_MAP as any)[label]);
-
-                      return (
-                        <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
-                          <View style={styles.cellInner}>
-                            <Text style={styles.label}>{label}</Text>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })}
-            </View>
-
-            <View style={styles.footer}>
-              <Text>Card ID: {card.id}</Text>
-            </View>
-          </Page>
-        );
-      })}
+          <View style={styles.footer}>
+            <Text>Card ID: {card.id}</Text>
+          </View>
+        </Page>
+      ))}
     </Document>
   );
 }
