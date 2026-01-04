@@ -1,6 +1,13 @@
 // pdf/BingoPackPdf.tsx
 import React from "react";
-import { Document, Page, View, Text, StyleSheet, Image } from "@react-pdf/renderer";
+import {
+  Document,
+  Page,
+  View,
+  Text,
+  StyleSheet,
+  Image,
+} from "@react-pdf/renderer";
 import { ICON_MAP } from "@/lib/iconMap";
 
 type BingoCard = {
@@ -11,11 +18,15 @@ type BingoCard = {
 type Props = {
   cards: BingoCard[];
   gridSize?: number;
-  sponsorImage?: string; // kept for later
-  bannerImageUrl?: string;
-  title?: string;
 
-  sponsorName?: string; // ✅ ADD THIS
+  // ✅ API is sending the banner as a data URI into sponsorImage
+  sponsorImage?: string;
+
+  // Optional fallback (if you ever pass it directly)
+  bannerImageUrl?: string;
+
+  title?: string;
+  sponsorName?: string;
 };
 
 const PAGE_PADDING = 36;
@@ -63,7 +74,8 @@ function safeIconSrc(value: unknown): string | null {
   const v = value.trim();
   if (!v) return null;
 
-  if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/")) return v;
+  if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/"))
+    return v;
   if (v.startsWith("icons/")) return `/${v}`;
 
   return null;
@@ -72,9 +84,12 @@ function safeIconSrc(value: unknown): string | null {
 export default function BingoPackPdf({
   cards,
   gridSize: gridSizeProp,
+
+  sponsorImage,
   bannerImageUrl,
+
   title,
-  sponsorName, // ✅ RECEIVE IT
+  sponsorName,
 }: Props) {
   const inferred = cards?.[0]?.grid?.length ?? 5;
   const gridSize = (gridSizeProp ?? inferred) as number;
@@ -82,6 +97,9 @@ export default function BingoPackPdf({
   const cellSize = clamp(Math.floor(CONTENT_WIDTH / gridSize), 70, 110);
   const gridWidth = cellSize * gridSize;
   const gridHeight = cellSize * gridSize;
+
+  // ✅ Use sponsorImage first (API sends a data URI), else fallback
+  const bannerSrc = sponsorImage || bannerImageUrl;
 
   const styles = StyleSheet.create({
     page: {
@@ -188,22 +206,26 @@ export default function BingoPackPdf({
 
         const seed = hashString(card.id);
         const chosenLabels = new Set(
-          seededShuffle(candidates, seed).slice(0, Math.min(MAX_ICONS_PER_CARD, candidates.length))
+          seededShuffle(candidates, seed).slice(
+            0,
+            Math.min(MAX_ICONS_PER_CARD, candidates.length)
+          )
         );
 
         return (
           <Page key={card.id} size="LETTER" style={styles.page}>
             <View style={styles.header}>
-              {bannerImageUrl ? (
+              {bannerSrc ? (
                 <View style={styles.bannerWrap}>
-                  <Image src={bannerImageUrl} style={styles.banner as any} />
+                  <Image src={bannerSrc} style={styles.banner as any} />
                 </View>
               ) : null}
 
               <Text style={styles.title}>{title || "Harvest Heroes Bingo"}</Text>
 
-              {/* ✅ OPTIONAL: display sponsorName if present */}
-              {sponsorName ? <Text style={styles.sub}>Sponsor: {sponsorName}</Text> : null}
+              {sponsorName ? (
+                <Text style={styles.sub}>Sponsor: {sponsorName}</Text>
+              ) : null}
 
               <Text style={styles.sub}>Card ID: {card.id}</Text>
             </View>
@@ -227,9 +249,17 @@ export default function BingoPackPdf({
                       const showIcon = Boolean(iconSrc) && chosenLabels.has(label);
 
                       return (
-                        <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
+                        <View
+                          key={`c-${card.id}-${rIdx}-${cIdx}`}
+                          style={cellStyle as any}
+                        >
                           <View style={styles.cellInner}>
-                            {showIcon ? <Image src={iconSrc as string} style={styles.iconImg as any} /> : null}
+                            {showIcon ? (
+                              <Image
+                                src={iconSrc as string}
+                                style={styles.iconImg as any}
+                              />
+                            ) : null}
                             <Text style={styles.label}>{label}</Text>
                           </View>
                         </View>
