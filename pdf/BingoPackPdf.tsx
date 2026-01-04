@@ -10,15 +10,15 @@ type BingoCard = {
 type Props = {
   cards: BingoCard[];
   gridSize?: number;
+
+  // Banner: API now sends this as a data-uri (preferred) or https url
+  bannerImageUrl?: string;
+
+  // Kept for backward compatibility with older API/PDF versions
+  sponsorImage?: string;
+
   title?: string;
   sponsorName?: string;
-
-  // Banner image as a data URI (preferred) or https URL.
-  // Your API already converts /public/banners/current.png into a data URI.
-  bannerImage?: string;
-
-  // If you still pass a URL from client sometimes, keep this too (optional).
-  // bannerImageUrl?: string;
 };
 
 const PAGE_PADDING = 36;
@@ -35,9 +35,10 @@ function clamp(n: number, min: number, max: number) {
 export default function BingoPackPdf({
   cards,
   gridSize: gridSizeProp,
+  bannerImageUrl,
+  sponsorImage,
   title,
   sponsorName,
-  bannerImage,
 }: Props) {
   const inferred = cards?.[0]?.grid?.length ?? 5;
   const gridSize = (gridSizeProp ?? inferred) as number;
@@ -45,6 +46,8 @@ export default function BingoPackPdf({
   const cellSize = clamp(Math.floor(CONTENT_WIDTH / gridSize), 70, 110);
   const gridWidth = cellSize * gridSize;
   const gridHeight = cellSize * gridSize;
+
+  const resolvedBanner = bannerImageUrl || sponsorImage || undefined;
 
   const styles = StyleSheet.create({
     page: {
@@ -79,13 +82,14 @@ export default function BingoPackPdf({
     title: {
       fontSize: 16,
       fontWeight: "bold",
-      marginBottom: 2,
+      marginBottom: 3,
+      textAlign: "center",
     },
 
     sub: {
       fontSize: 10,
       color: "#444",
-      marginBottom: 2,
+      textAlign: "center",
     },
 
     gridWrap: {
@@ -121,83 +125,81 @@ export default function BingoPackPdf({
       borderBottomWidth: 0,
     },
 
+    cellInner: {
+      width: "100%",
+      height: "100%",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
     label: {
       fontSize: 10,
       textAlign: "center",
       lineHeight: 1.15,
     },
 
-    footer: {
+    cardIdFooter: {
       marginTop: 12,
-      flexDirection: "row",
-      justifyContent: "space-between",
       alignItems: "center",
     },
 
-    footerLeft: {
-      fontSize: 9,
-      color: "#444",
-    },
-
-    footerRight: {
-      fontSize: 9,
+    cardIdText: {
+      fontSize: 10,
       color: "#111",
-      fontWeight: "bold",
     },
   });
 
   return (
     <Document>
-      {cards.map((card) => (
-        <Page key={card.id} size="LETTER" style={styles.page}>
-          <View style={styles.header}>
-            {bannerImage ? (
-              <View style={styles.bannerWrap}>
-                <Image src={bannerImage} style={styles.banner as any} />
-              </View>
-            ) : null}
-
-            <Text style={styles.title}>{title || "Harvest Heroes Bingo"}</Text>
-
-            {/* NEW: Lights Out label (blackout rules) */}
-            <Text style={styles.sub}>Lights Out Bingo (Blackout)</Text>
-
-            {sponsorName ? <Text style={styles.sub}>Sponsor: {sponsorName}</Text> : null}
-          </View>
-
-          <View style={styles.gridWrap}>
-            {card.grid.map((row, rIdx) => {
-              const isLastRow = rIdx === card.grid.length - 1;
-
-              return (
-                <View key={`r-${card.id}-${rIdx}`} style={styles.row}>
-                  {row.map((label, cIdx) => {
-                    const isLastCol = cIdx === row.length - 1;
-
-                    const cellStyle = [
-                      styles.cell,
-                      isLastCol ? styles.cellLastCol : null,
-                      isLastRow ? styles.cellLastRow : null,
-                    ];
-
-                    return (
-                      <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
-                        <Text style={styles.label}>{label}</Text>
-                      </View>
-                    );
-                  })}
+      {cards.map((card) => {
+        return (
+          <Page key={card.id} size="LETTER" style={styles.page}>
+            <View style={styles.header}>
+              {resolvedBanner ? (
+                <View style={styles.bannerWrap}>
+                  <Image src={resolvedBanner} style={styles.banner as any} />
                 </View>
-              );
-            })}
-          </View>
+              ) : null}
 
-          {/* Footer: move Card ID to bottom. Remove the old “10 icons” text entirely. */}
-          <View style={styles.footer}>
-            <Text style={styles.footerLeft}>Text labels are the source of truth.</Text>
-            <Text style={styles.footerRight}>Card ID: {card.id}</Text>
-          </View>
-        </Page>
-      ))}
+              <Text style={styles.title}>{title || "Lights Out Bingo"}</Text>
+
+              {sponsorName ? <Text style={styles.sub}>Sponsor: {sponsorName}</Text> : null}
+            </View>
+
+            <View style={styles.gridWrap}>
+              {card.grid.map((row, rIdx) => {
+                const isLastRow = rIdx === card.grid.length - 1;
+
+                return (
+                  <View key={`r-${card.id}-${rIdx}`} style={styles.row}>
+                    {row.map((label, cIdx) => {
+                      const isLastCol = cIdx === row.length - 1;
+
+                      const cellStyle = [
+                        styles.cell,
+                        isLastCol ? styles.cellLastCol : null,
+                        isLastRow ? styles.cellLastRow : null,
+                      ];
+
+                      return (
+                        <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
+                          <View style={styles.cellInner}>
+                            <Text style={styles.label}>{label}</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+
+            <View style={styles.cardIdFooter}>
+              <Text style={styles.cardIdText}>Card ID: {card.id}</Text>
+            </View>
+          </Page>
+        );
+      })}
     </Document>
   );
 }
