@@ -108,6 +108,13 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
+    // ✅ NEW: stable pack identifiers for this request
+    const createdAt = Date.now();
+    const requestKey =
+      typeof body?.requestKey === "string" && body.requestKey.trim()
+        ? body.requestKey.trim()
+        : `pack_${createdAt.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
     const title = typeof body?.title === "string" ? body.title : "Bingo Pack";
     const sponsorName = typeof body?.sponsorName === "string" ? body.sponsorName : "";
 
@@ -173,8 +180,19 @@ export async function POST(req: Request) {
     const pdfBase64 = Buffer.from(pdfBuffer).toString("base64");
     const csv = buildRosterCsv(cards);
 
+    // ✅ NEW: cards.json source of truth
+    const cardsPack = {
+      packId: requestKey,
+      createdAt,
+      title,
+      sponsorName,
+      cards,
+    };
+
     return NextResponse.json({
-      requestKey: `${Date.now()}`,
+      requestKey,
+      createdAt,
+      centerLabel: CENTER_LABEL,
       title,
       sponsorName,
       bannerImageUrl: bannerRaw,
@@ -182,6 +200,7 @@ export async function POST(req: Request) {
       pdfBase64,
       csv,
       usedItems,
+      cardsPack, // ✅ NEW
     });
   } catch (err: any) {
     return NextResponse.json(
