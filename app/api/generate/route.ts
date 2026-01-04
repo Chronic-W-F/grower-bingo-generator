@@ -94,14 +94,17 @@ export async function POST(req: Request) {
 
     // IMPORTANT:
     // - app/page.tsx expects pdfBase64 to be RAW base64 (no data: prefix)
-    //
-    // ✅ This matches the UPDATED BingoPackPdf.tsx I gave you:
-    // it expects `bannerImage` (data URI or https URL).
     const pdfBuffer = await renderToBuffer(
       BingoPackPdf({
         title,
         sponsorName: body.sponsorName,
-        bannerImage: bannerDataOrUrl, // ✅ correct prop for the new PDF file
+
+        // ✅ Correct prop name for the updated PDF component:
+        bannerImageUrl: bannerDataOrUrl,
+
+        // ✅ Back-compat fallback (PDF also accepts this):
+        sponsorImage: bannerDataOrUrl,
+
         cards: pack.cards,
         gridSize,
       }) as any
