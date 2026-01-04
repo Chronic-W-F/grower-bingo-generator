@@ -21,6 +21,7 @@ type GeneratedPack = {
 };
 
 const SHARED_POOL_KEY = "grower-bingo:pool:v1";
+const LAST_GENERATED_PACK_KEY = "grower-bingo:lastGeneratedPack:v1";
 
 const DEFAULT_ITEMS = `Trellis net
 Lollipop
@@ -116,6 +117,20 @@ export default function Page() {
   const poolLines = useMemo(() => normalizeLines(itemsText), [itemsText]);
   const poolCount = poolLines.length;
 
+  // Restore last pack so Back navigation doesn't gray out buttons
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(LAST_GENERATED_PACK_KEY);
+      if (!raw) return;
+      const restored = JSON.parse(raw) as GeneratedPack;
+      if (restored?.pdfBase64 && restored?.requestKey) {
+        setPack(restored);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Keep the shared pool synced for Caller reload
   useEffect(() => {
     try {
@@ -194,6 +209,13 @@ export default function Page() {
       };
 
       setPack(nextPack);
+
+      // Persist generator state so Back button doesn't gray out everything
+      try {
+        window.localStorage.setItem(LAST_GENERATED_PACK_KEY, JSON.stringify(nextPack));
+      } catch {
+        // ignore
+      }
 
       // FIX: Save last pack id and store a full pack object Caller can use (includes weeklyPool / usedItems)
       if (data?.cardsPack?.packId) {
@@ -278,7 +300,8 @@ export default function Page() {
   function openWinners() {
     const packId = pack?.cardsPack?.packId || pack?.requestKey;
     if (!packId) return;
-    window.location.href = `/winners/${encodeURIComponent(packId)}`;
+    const url = `/winners/${encodeURIComponent(packId)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -549,4 +572,4 @@ export default function Page() {
       </div>
     </div>
   );
-}
+                  }
