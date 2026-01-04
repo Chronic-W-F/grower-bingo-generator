@@ -1,5 +1,5 @@
 // lib/bingo.ts
-// Supports 3x3, 4x4, 5x5 cards + auto weekly pool selection.
+// Supports 3x3, 4x4, 5x5 cards + auto weekly pool selection + unique-grid generation.
 
 export const CENTER_LABEL = "Joe’s Grows";
 
@@ -9,11 +9,19 @@ export type BingoCard = {
 };
 
 export type BingoPack = {
+  packId: string;
+  createdAt: number;
+  title?: string;
+  sponsorName?: string;
+
   cards: BingoCard[];
+
   // The weekly pool actually used to generate these cards (caller should use this)
   weeklyPool: string[];
+
   // All unique items appearing across all cards (excluding center if used)
   usedItems: string[];
+
   meta: {
     gridSize: number;
     freeCenter: boolean;
@@ -24,8 +32,11 @@ export type BingoPack = {
 };
 
 function cryptoId() {
-  // good enough for IDs
   return Math.random().toString(36).slice(2, 10) + "-" + Date.now().toString(36);
+}
+
+function packId() {
+  return "pack_" + Math.random().toString(36).slice(2, 10) + "_" + Date.now().toString(36).slice(-5);
 }
 
 export function normalizeLines(input: string): string[] {
@@ -141,8 +152,10 @@ export function createBingoPackFromMasterPool(args: {
   qty: number;
   gridSize: 3 | 4 | 5;
   seed?: number;
+  title?: string;
+  sponsorName?: string;
 }): BingoPack {
-  const { masterPool, qty, gridSize, seed } = args;
+  const { masterPool, qty, gridSize, seed, title, sponsorName } = args;
 
   const uniquePool = uniqueStrings(masterPool);
   const cfg = getCardConfig(gridSize);
@@ -154,8 +167,6 @@ export function createBingoPackFromMasterPool(args: {
   const cards: BingoCard[] = [];
   const sigs = new Set<string>();
 
-  // To keep things from getting stuck if weeklyPool is small and qty is huge,
-  // we cap attempts. With your sizes this is fine.
   const maxAttempts = Math.max(1000, qty * 50);
   let attempts = 0;
   let localSeed = seed ?? Math.floor(Math.random() * 1_000_000_000);
@@ -194,6 +205,10 @@ export function createBingoPackFromMasterPool(args: {
   }
 
   return {
+    packId: packId(),
+    createdAt: Date.now(),
+    title,
+    sponsorName,
     cards,
     weeklyPool,
     usedItems: Array.from(used),
@@ -205,4 +220,13 @@ export function createBingoPackFromMasterPool(args: {
       qty,
     },
   };
+}
+
+// Convenience wrapper for your current app: 5x5 with free center
+export function createBingoPack(allItems: string[], qty: number): BingoPack {
+  return createBingoPackFromMasterPool({
+    masterPool: allItems,
+    qty,
+    gridSize: 5,
+  });
 }
