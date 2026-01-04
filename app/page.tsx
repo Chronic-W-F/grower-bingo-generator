@@ -3,10 +3,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
-type BingoCard = {
-  id: string;
-  grid: string[][];
-};
+type BingoCard = { id: string; grid: string[][] };
 
 type CardsPack = {
   packId: string;
@@ -27,6 +24,7 @@ type GeneratedPack = {
 
 const SHARED_POOL_KEY = "grower-bingo:pool:v1";
 const LAST_PACK_META_KEY = "grower-bingo:lastPackMeta:v1";
+const ACTIVE_PACK_ID_KEY = "grower-bingo:activePackId:v1";
 
 const DEFAULT_ITEMS = `Trellis net
 Lollipop
@@ -82,7 +80,11 @@ function downloadBase64Pdf(filename: string, base64: string) {
   URL.revokeObjectURL(url);
 }
 
-function downloadTextFile(filename: string, text: string, mime = "text/plain;charset=utf-8") {
+function downloadTextFile(
+  filename: string,
+  text: string,
+  mime = "text/plain;charset=utf-8"
+) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -129,7 +131,7 @@ export default function Page() {
   const [title, setTitle] = useState("Harvest Heroes Bingo");
   const [sponsorName, setSponsorName] = useState("Joe’s Grows");
 
-  // ✅ Locked: always use /banners/current.png (swap the file weekly in public/)
+  // Locked: always use /banners/current.png
   const [bannerImageUrl, setBannerImageUrl] = useState("/banners/current.png");
 
   const [sponsorLogoUrl, setSponsorLogoUrl] = useState("");
@@ -144,13 +146,22 @@ export default function Page() {
   const poolLines = useMemo(() => normalizeLines(itemsText), [itemsText]);
   const poolCount = poolLines.length;
 
-  // Restore last pack meta so buttons stay active after returning from Caller/Winners
+  // Restore last pack meta so buttons stay active when you come back from Caller
   useEffect(() => {
     const last = loadLastPackMeta();
     if (last?.requestKey) {
       setPack(last);
       if (last?.cardsPack?.title) setTitle(last.cardsPack.title);
-      if (typeof last?.cardsPack?.sponsorName === "string") setSponsorName(last.cardsPack.sponsorName);
+      if (typeof last?.cardsPack?.sponsorName === "string") {
+        setSponsorName(last.cardsPack.sponsorName);
+      }
+      if (last?.cardsPack?.packId) {
+        try {
+          window.localStorage.setItem(ACTIVE_PACK_ID_KEY, last.cardsPack.packId);
+        } catch {
+          // ignore
+        }
+      }
       setInfo("Restored last generated pack (meta) from this device.");
     }
   }, []);
@@ -189,7 +200,6 @@ export default function Page() {
       return;
     }
 
-    // Ensure caller pool is synced before generating
     try {
       window.localStorage.setItem(SHARED_POOL_KEY, poolLines.join("\n"));
     } catch {
@@ -235,13 +245,28 @@ export default function Page() {
       setPack(nextPack);
       saveLastPackMeta(nextPack);
 
-      // Save cardsPack locally as source-of-truth for Winners + digital cards (Option 1 localStorage)
+      // Save cardsPack to localStorage for Winners and digital cards
       if (data?.cardsPack?.packId) {
+        const pid = data.cardsPack.packId;
+
+        try {
+          window.localStorage.setItem(ACTIVE_PACK_ID_KEY, pid);
+        } catch {
+          // ignore
+        }
+
         try {
           window.localStorage.setItem(
-            `grower-bingo:pack:${data.cardsPack.packId}`,
+            `grower-bingo:pack:${pid}`,
             JSON.stringify(data.cardsPack)
           );
+        } catch {
+          // ignore
+        }
+
+        // Important: clear any prior draw history for this packId
+        try {
+          window.localStorage.setItem(`grower-bingo:draws:${pid}`, "");
         } catch {
           // ignore
         }
@@ -256,12 +281,13 @@ export default function Page() {
         }
       }
 
-      // Auto download PDF
       const filename = `${safeFileName(title)}-${nextPack.requestKey}.pdf`;
       setTimeout(() => {
         try {
           downloadBase64Pdf(filename, data.pdfBase64);
-          setInfo("PDF download triggered. If nothing happened, use the manual Download PDF button below.");
+          setInfo(
+            "PDF download triggered. If nothing happened, use the manual Download PDF button below."
+          );
         } catch (e: any) {
           setError(e?.message || "Could not trigger PDF download.");
         }
@@ -311,25 +337,28 @@ export default function Page() {
 
   function openCallerNewTab() {
     const pid = pack?.cardsPack?.packId;
-    const href = pid ? `/caller?packId=${encodeURIComponent(pid)}` : "/caller";
-    window.open(href, "_blank", "noopener,noreferrer");
+    if (!pid) {
+      setError("Generate a pack first so Caller can bind to a packId.");
+      return;
+    }
+    try {
+      window.localStorage.setItem(ACTIVE_PACK_ID_KEY, pid);
+    } catch {
+      // ignore
+    }
+    window.open(`/caller?packId=${encodeURIComponent(pid)}`, "_blank", "noopener,noreferrer");
   }
 
   function clearActivePack() {
     setPack(null);
     setInfo("Cleared active pack. Generate new cards when ready.");
-    setError("");
     try {
       window.localStorage.removeItem(LAST_PACK_META_KEY);
+      window.localStorage.removeItem(ACTIVE_PACK_ID_KEY);
     } catch {
       // ignore
     }
   }
-
-  const hasPackMeta = !!pack?.requestKey;
-  const hasPdf = !!pack?.pdfBase64;
-  const hasCsv = !!pack?.csv;
-  const hasCardsPack = !!pack?.cardsPack?.packId;
 
   return (
     <div
@@ -414,7 +443,7 @@ export default function Page() {
           </div>
 
           <div>
-            <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>Quantity (1–500)</label>
+            <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>Quantity (1 to 500)</label>
             <input
               value={qtyInput}
               onChange={(e) => setQtyInput(e.target.value)}
@@ -489,13 +518,13 @@ export default function Page() {
 
             <button
               onClick={manualDownloadPdf}
-              disabled={!hasPdf}
+              disabled={!pack?.pdfBase64}
               style={{
                 padding: "12px 16px",
                 borderRadius: 12,
                 border: "1px solid #111827",
-                background: !hasPdf ? "#9ca3af" : "white",
-                cursor: !hasPdf ? "not-allowed" : "pointer",
+                background: !pack?.pdfBase64 ? "#9ca3af" : "white",
+                cursor: !pack?.pdfBase64 ? "not-allowed" : "pointer",
                 minWidth: 180,
               }}
             >
@@ -504,13 +533,13 @@ export default function Page() {
 
             <button
               onClick={downloadCsv}
-              disabled={!hasCsv}
+              disabled={!pack?.csv}
               style={{
                 padding: "12px 16px",
                 borderRadius: 12,
                 border: "1px solid #111827",
-                background: !hasCsv ? "#9ca3af" : "white",
-                cursor: !hasCsv ? "not-allowed" : "pointer",
+                background: !pack?.csv ? "#9ca3af" : "white",
+                cursor: !pack?.csv ? "not-allowed" : "pointer",
                 minWidth: 220,
               }}
             >
@@ -519,13 +548,13 @@ export default function Page() {
 
             <button
               onClick={downloadCardsJson}
-              disabled={!hasCardsPack}
+              disabled={!pack?.cardsPack?.packId}
               style={{
                 padding: "12px 16px",
                 borderRadius: 12,
                 border: "1px solid #111827",
-                background: !hasCardsPack ? "#9ca3af" : "white",
-                cursor: !hasCardsPack ? "not-allowed" : "pointer",
+                background: !pack?.cardsPack?.packId ? "#9ca3af" : "white",
+                cursor: !pack?.cardsPack?.packId ? "not-allowed" : "pointer",
                 minWidth: 220,
               }}
             >
@@ -534,13 +563,13 @@ export default function Page() {
 
             <button
               onClick={openWinnersNewTab}
-              disabled={!hasCardsPack}
+              disabled={!pack?.cardsPack?.packId}
               style={{
                 padding: "12px 16px",
                 borderRadius: 12,
                 border: "1px solid #111827",
-                background: !hasCardsPack ? "#9ca3af" : "white",
-                cursor: !hasCardsPack ? "not-allowed" : "pointer",
+                background: !pack?.cardsPack?.packId ? "#9ca3af" : "white",
+                cursor: !pack?.cardsPack?.packId ? "not-allowed" : "pointer",
                 minWidth: 220,
               }}
             >
@@ -549,13 +578,13 @@ export default function Page() {
 
             <button
               onClick={openCallerNewTab}
-              disabled={isGenerating}
+              disabled={!pack?.cardsPack?.packId}
               style={{
                 padding: "12px 16px",
                 borderRadius: 12,
                 border: "1px solid #111827",
-                background: "white",
-                cursor: isGenerating ? "not-allowed" : "pointer",
+                background: !pack?.cardsPack?.packId ? "#9ca3af" : "white",
+                cursor: !pack?.cardsPack?.packId ? "not-allowed" : "pointer",
                 minWidth: 220,
               }}
             >
@@ -564,13 +593,12 @@ export default function Page() {
 
             <button
               onClick={clearActivePack}
-              disabled={!hasPackMeta}
               style={{
                 padding: "12px 16px",
                 borderRadius: 12,
                 border: "1px solid #111827",
-                background: !hasPackMeta ? "#9ca3af" : "white",
-                cursor: !hasPackMeta ? "not-allowed" : "pointer",
+                background: "white",
+                cursor: "pointer",
                 minWidth: 200,
               }}
             >
@@ -582,11 +610,6 @@ export default function Page() {
           {info ? <div style={{ marginTop: 10, color: "#111827" }}>{info}</div> : null}
         </div>
       </div>
-
-      <div style={{ fontSize: 12, color: "#6b7280" }}>
-        Tip: Winners + Caller are device-specific until we add server storage. Generate and run the calls on the same phone
-        that you’ll use to check Winners.
-      </div>
     </div>
   );
-        }
+}
