@@ -1,7 +1,7 @@
 // app/caller/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 const SHARED_POOL_KEY = "grower-bingo:pool:v1";
@@ -74,18 +74,16 @@ function loadLastPackIdFallback(): string {
 }
 
 function buildsDrawText(draws: string[][]): string {
-  // Winners parser accepts "Day 1:" or "1:"
-  // We'll write Day headers so it's clear when pasted or reviewed.
   const lines: string[] = [];
   for (let i = 0; i < draws.length; i++) {
     lines.push(`Day ${i + 1}:`);
     for (const item of draws[i]) lines.push(item);
     lines.push("");
   }
-  return lines.join("\n").trim() + "\n";
+  return (lines.join("\n").trim() + "\n").trimStart();
 }
 
-export default function CallerPage() {
+function CallerInner() {
   const searchParams = useSearchParams();
   const qpPackId = (searchParams?.get("packId") || "").trim();
 
@@ -108,19 +106,13 @@ export default function CallerPage() {
 
   const [info, setInfo] = useState<string>("");
 
-  // Load on mount
   useEffect(() => {
     const shared = window.localStorage.getItem(SHARED_POOL_KEY) ?? "";
     const sharedText = shared ?? "";
 
-    // Determine packId priority:
-    // 1) query param
-    // 2) ACTIVE_PACK_ID_KEY
-    // 3) lastPackMeta cardsPack.packId
     const resolvedPackId = qpPackId || loadLastPackIdFallback();
     setPackId(resolvedPackId);
 
-    // Persist as "active" so a refresh keeps the binding
     if (resolvedPackId) {
       try {
         window.localStorage.setItem(ACTIVE_PACK_ID_KEY, resolvedPackId);
@@ -134,9 +126,6 @@ export default function CallerPage() {
     if (rawState) {
       try {
         const s = JSON.parse(rawState) as CallerState;
-
-        // If saved state packId differs from resolvedPackId, do not blindly restore game.
-        // We only restore the saved game if it matches the same packId.
         const samePack = (s.packId || "").trim() && s.packId === resolvedPackId;
 
         const restoredPoolText = (s.poolText ?? "").trim() || sharedText;
@@ -159,7 +148,6 @@ export default function CallerPage() {
           setDraws(Array.isArray(s.draws) ? s.draws : []);
           setInfo(`Restored Caller state for packId: ${resolvedPackId}`);
         } else {
-          // New pack, start clean
           setRound(0);
           setDeck([]);
           setCalled([]);
@@ -172,7 +160,6 @@ export default function CallerPage() {
       }
     }
 
-    // No saved state
     setPoolText(sharedText);
     setDeckSize(50);
     setDrawSize(10);
@@ -185,7 +172,6 @@ export default function CallerPage() {
     setInfo(resolvedPackId ? `Bound to packId: ${resolvedPackId}` : "No packId found. Go back and generate a pack.");
   }, [qpPackId]);
 
-  // Persist Caller state
   useEffect(() => {
     const state: CallerState = {
       packId,
@@ -206,7 +192,7 @@ export default function CallerPage() {
     }
   }, [packId, poolText, deckSize, drawSize, deckSizeInput, drawSizeInput, round, deck, called, draws]);
 
-  // Fix C: whenever draws change, write official draw text to Winners storage key for this packId
+  // Fix C: keep Winners draw text synced to the active packId
   useEffect(() => {
     if (!packId) return;
     try {
@@ -266,7 +252,6 @@ export default function CallerPage() {
     setDraws([]);
     setRound(0);
 
-    // Clear Winners draw text for this packId on new game start
     try {
       window.localStorage.setItem(drawsStorageKey(packId), "");
     } catch {
@@ -510,7 +495,8 @@ export default function CallerPage() {
         </div>
 
         <div style={{ marginTop: 12, fontSize: 12, color: "#6b7280" }}>
-          Fix C: Draws are automatically written to <b>{packId ? drawsStorageKey(packId) : "grower-bingo:draws:(packId)"}</b> for Winners.
+          Fix C: Draws are automatically written to{" "}
+          <b>{packId ? drawsStorageKey(packId) : "grower-bingo:draws:(packId)"}</b> for Winners.
         </div>
       </div>
 
@@ -541,5 +527,13 @@ export default function CallerPage() {
         This page persists state, so refresh restores the current game.
       </div>
     </div>
+  );
+}
+
+export default function CallerPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 16 }}>Loading Caller...</div>}>
+      <CallerInner />
+    </Suspense>
   );
 }
