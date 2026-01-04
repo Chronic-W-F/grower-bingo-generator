@@ -54,7 +54,6 @@ function drawsStorageKey(packId: string) {
 }
 
 // Find the latest packId by scanning localStorage keys.
-// This is safe because your packs are stored as grower-bingo:pack:<packId>
 function findLatestPackId(): string | null {
   try {
     const keys = Object.keys(window.localStorage);
@@ -76,7 +75,7 @@ function findLatestPackId(): string | null {
           }
         }
       } catch {
-        // ignore bad entries
+        // ignore
       }
     }
 
@@ -87,25 +86,19 @@ function findLatestPackId(): string | null {
 }
 
 type CallerState = {
-  // which pack we are calling for
   packId: string | null;
-
-  // shown in UI but no longer required to edit
   poolText: string;
 
-  // numeric settings
   deckSize: number;
   drawSize: number;
 
-  // inputs
   deckSizeInput: string;
   drawSizeInput: string;
 
-  // game state
   round: number;
   deck: string[];
   called: string[];
-  draws: string[][]; // draw batches
+  draws: string[][];
 };
 
 export default function CallerPage() {
@@ -147,8 +140,6 @@ export default function CallerPage() {
         setDeck(Array.isArray(s.deck) ? s.deck : []);
         setCalled(Array.isArray(s.called) ? s.called : []);
         setDraws(Array.isArray(s.draws) ? s.draws : []);
-
-        // we still need to load pack for display and correct pool
       } catch {
         // ignore
       }
@@ -173,12 +164,21 @@ export default function CallerPage() {
       const p = JSON.parse(rawPack) as BingoPack;
       setPack(p);
 
-      // Force poolText to the pack’s weeklyPool so you never have to type it.
-      const nextPoolText = (p.weeklyPool || []).join("\n");
+      // ✅ IMPORTANT CHANGE:
+      // Caller should draw from usedItems (union of all squares across all cards).
+      // This guarantees every call can matter and guarantees a winner by exhausting the deck.
+      const poolFromPack =
+        Array.isArray(p.usedItems) && p.usedItems.length
+          ? p.usedItems
+          : Array.isArray(p.weeklyPool) && p.weeklyPool.length
+            ? p.weeklyPool
+            : [];
+
+      const nextPoolText = poolFromPack.join("\n");
       setPoolText(nextPoolText);
 
       // If we don't already have a running deck, initialize defaults based on pool size
-      const maxDeck = Math.max(1, p.weeklyPool.length || 1);
+      const maxDeck = Math.max(1, poolFromPack.length || 1);
       const ds = clamp(safeParseInt(deckSizeInput, deckSize), 1, maxDeck);
       const dr = clamp(safeParseInt(drawSizeInput, drawSize), 1, ds);
 
@@ -190,11 +190,11 @@ export default function CallerPage() {
       // If we have no deck yet, auto-start
       setDeck((prev) => {
         if (prev && prev.length) return prev;
-        const shuffled = shuffle(p.weeklyPool || []);
+        const shuffled = shuffle(poolFromPack);
         return shuffled.slice(0, ds);
       });
 
-      setStatus("Loaded latest pack + weekly pool automatically.");
+      setStatus("Loaded latest pack + caller pool automatically.");
     } catch {
       setStatus("Failed to parse pack data. Generate a new pack.");
     }
@@ -314,12 +314,17 @@ export default function CallerPage() {
   const winnersUrl = packId ? `/winners/${encodeURIComponent(packId)}` : "/winners";
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
+    <div
+      style={{
+        maxWidth: 720,
+        margin: "0 auto",
+        padding: 16,
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+      }}
+    >
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <h1 style={{ margin: 0, fontSize: 24 }}>Grower Bingo — Caller</h1>
-        <div style={{ marginTop: 8, fontSize: 13, color: "#374151" }}>
-          Status: {status}
-        </div>
+        <div style={{ marginTop: 8, fontSize: 13, color: "#374151" }}>Status: {status}</div>
 
         <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>
           Pack: <b>{packId ?? "None"}</b>
@@ -358,7 +363,7 @@ export default function CallerPage() {
       </div>
 
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Weekly Pool (auto-loaded) — Count: {poolCount}</h2>
+        <h2 style={{ margin: 0, fontSize: 18 }}>Caller Pool (auto-loaded) — Count: {poolCount}</h2>
 
         <textarea
           value={poolText}
@@ -376,7 +381,7 @@ export default function CallerPage() {
           }}
         />
         <div style={{ marginTop: 10, fontSize: 13, color: "#6b7280" }}>
-          This pool is taken from the generated pack’s <b>weeklyPool</b>. No manual typing needed.
+          This pool is taken from the generated pack’s <b>usedItems</b> (fallback: weeklyPool). No manual typing needed.
         </div>
       </div>
 
@@ -389,7 +394,9 @@ export default function CallerPage() {
           inputMode="numeric"
           style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid #d1d5db", fontSize: 16 }}
         />
-        <div style={{ marginTop: 6, fontSize: 13, color: "#6b7280" }}>Must be ≤ pool count. (Clamps on blur / Start Game.)</div>
+        <div style={{ marginTop: 6, fontSize: 13, color: "#6b7280" }}>
+          Must be ≤ pool count. (Clamps on blur / Start Game.)
+        </div>
 
         <div style={{ height: 12 }} />
 
@@ -401,7 +408,9 @@ export default function CallerPage() {
           inputMode="numeric"
           style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid #d1d5db", fontSize: 16 }}
         />
-        <div style={{ marginTop: 6, fontSize: 13, color: "#6b7280" }}>Must be ≤ deck size. (Clamps on blur / Start Game.)</div>
+        <div style={{ marginTop: 6, fontSize: 13, color: "#6b7280" }}>
+          Must be ≤ deck size. (Clamps on blur / Start Game.)
+        </div>
 
         <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button
@@ -448,7 +457,9 @@ export default function CallerPage() {
           </div>
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
             <div style={{ fontSize: 12, color: "#6b7280" }}>Called</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{calledCount} / {deck.length || 0}</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>
+              {calledCount} / {deck.length || 0}
+            </div>
           </div>
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
             <div style={{ fontSize: 12, color: "#6b7280" }}>Remaining</div>
@@ -461,7 +472,9 @@ export default function CallerPage() {
         <h2 style={{ margin: 0, fontSize: 18 }}>Draw history</h2>
 
         {!draws.length ? (
-          <div style={{ marginTop: 10, color: "#6b7280" }}>No draws yet. Start a game, then press Next draw.</div>
+          <div style={{ marginTop: 10, color: "#6b7280" }}>
+            No draws yet. Start a game, then press Next draw.
+          </div>
         ) : (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
             {draws.map((batch, idx) => (
