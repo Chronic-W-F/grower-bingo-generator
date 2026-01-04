@@ -3,12 +3,21 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
+type CardsPack = {
+  packId: string;
+  createdAt: number;
+  title?: string;
+  sponsorName?: string;
+  cards: { id: string; grid: string[][] }[];
+};
+
 type GeneratedPack = {
   pdfBase64: string;
   csv: string;
   createdAt: number;
   requestKey: string;
   usedItems?: string[];
+  cardsPack?: CardsPack;
 };
 
 const SHARED_POOL_KEY = "grower-bingo:pool:v1";
@@ -77,6 +86,11 @@ function downloadTextFile(filename: string, text: string, mime = "text/plain;cha
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function downloadJsonFile(filename: string, obj: unknown) {
+  const text = JSON.stringify(obj, null, 2);
+  downloadTextFile(filename, text, "application/json;charset=utf-8");
 }
 
 export default function Page() {
@@ -169,12 +183,25 @@ export default function Page() {
       const nextPack: GeneratedPack = {
         pdfBase64: data.pdfBase64,
         csv: data.csv || "",
-        createdAt: Date.now(),
+        createdAt: data.createdAt || Date.now(),
         requestKey: data.requestKey || String(Date.now()),
         usedItems: data.usedItems,
+        cardsPack: data.cardsPack,
       };
 
       setPack(nextPack);
+
+      // ✅ NEW: Save the cardsPack as source-of-truth for digital cards + winners
+      if (data?.cardsPack?.packId) {
+        try {
+          window.localStorage.setItem(
+            `grower-bingo:pack:${data.cardsPack.packId}`,
+            JSON.stringify(data.cardsPack)
+          );
+        } catch {
+          // ignore
+        }
+      }
 
       // If API returns usedItems, sync those to Caller pool (Option B)
       if (Array.isArray(data.usedItems) && data.usedItems.length) {
@@ -213,6 +240,24 @@ export default function Page() {
     if (!pack?.csv) return;
     const filename = `${safeFileName(title)}-${pack.requestKey}.csv`;
     downloadTextFile(filename, pack.csv, "text/csv;charset=utf-8");
+  }
+
+  function downloadCardsJson() {
+    const cardsPack = pack?.cardsPack;
+    if (!cardsPack?.packId) {
+      setError("No cardsPack found. Generate a pack first.");
+      return;
+    }
+    setError("");
+    const filename = `${safeFileName(title)}-${cardsPack.packId}.cards.json`;
+    downloadJsonFile(filename, cardsPack);
+    setInfo("cards.json downloaded.");
+  }
+
+  function openWinners() {
+    const packId = pack?.cardsPack?.packId || pack?.requestKey;
+    if (!packId) return;
+    window.location.href = `/winners/${encodeURIComponent(packId)}`;
   }
 
   return (
@@ -399,6 +444,36 @@ export default function Page() {
               }}
             >
               Download CSV (Roster)
+            </button>
+
+            <button
+              onClick={downloadCardsJson}
+              disabled={!pack?.cardsPack?.packId}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "1px solid #111827",
+                background: !pack?.cardsPack?.packId ? "#9ca3af" : "white",
+                cursor: !pack?.cardsPack?.packId ? "not-allowed" : "pointer",
+                minWidth: 220,
+              }}
+            >
+              Download cards.json
+            </button>
+
+            <button
+              onClick={openWinners}
+              disabled={!pack?.cardsPack?.packId && !pack?.requestKey}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "1px solid #111827",
+                background: !pack?.cardsPack?.packId && !pack?.requestKey ? "#9ca3af" : "white",
+                cursor: !pack?.cardsPack?.packId && !pack?.requestKey ? "not-allowed" : "pointer",
+                minWidth: 220,
+              }}
+            >
+              Open Winners
             </button>
 
             <a
