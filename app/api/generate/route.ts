@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     // Default workflow: replace public/banners/current.png weekly
     const bannerUrl = (body.bannerImageUrl ?? "/banners/current.png").toString();
 
-    // We'll convert /public paths to a data URI for react-pdf reliability
+    // Convert /public paths to data URI for react-pdf reliability
     let bannerDataOrUrl: string | undefined = undefined;
 
     if (bannerUrl.startsWith("/")) {
@@ -94,14 +94,16 @@ export async function POST(req: Request) {
 
     // IMPORTANT:
     // - app/page.tsx expects pdfBase64 to be RAW base64 (no data: prefix)
+    //
+    // ✅ This matches the UPDATED BingoPackPdf.tsx I gave you:
+    // it expects `bannerImage` (data URI or https URL).
     const pdfBuffer = await renderToBuffer(
       BingoPackPdf({
         title,
         sponsorName: body.sponsorName,
-        // ✅ FIX: send the resolved banner into BOTH props so whichever PDF version you have renders it
-        bannerImageUrl: bannerDataOrUrl,
-        sponsorImage: bannerDataOrUrl,
+        bannerImage: bannerDataOrUrl, // ✅ correct prop for the new PDF file
         cards: pack.cards,
+        gridSize,
       }) as any
     );
 
