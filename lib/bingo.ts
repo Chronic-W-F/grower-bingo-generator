@@ -1,5 +1,8 @@
 // lib/bingo.ts
-// Supports 3x3, 4x4, 5x5 cards + auto weekly pool selection + unique-grid generation.
+// Supports 3x3, 4x4, 5x5 cards + unique-grid generation.
+// UPDATED: Cards now draw from the FULL master pool (e.g., 100 items).
+// weeklyPool = full unique master pool (not auto-shrunk to 50)
+// usedItems = union of squares actually appearing across all cards (caller should use this)
 
 export const CENTER_LABEL = "Joe’s Grows";
 
@@ -16,7 +19,7 @@ export type BingoPack = {
 
   cards: BingoCard[];
 
-  // The weekly pool actually used to generate these cards (caller should use this)
+  // FULL unique master pool used as the source for cards (e.g., 100)
   weeklyPool: string[];
 
   // All unique items appearing across all cards (excluding center if used)
@@ -90,8 +93,7 @@ export function getCardConfig(gridSize: 3 | 4 | 5) {
   const freeCenter = gridSize === 3 || gridSize === 5; // default behavior
   const squaresPerCard = gridSize * gridSize - (freeCenter ? 1 : 0);
 
-  // Auto weekly pool sizing:
-  // 5x5 -> 50, 4x4 -> 32, 3x3 (with free center) -> 16
+  // Kept for meta only (no longer used to shrink weeklyPool)
   let weeklyPoolSize = 2 * squaresPerCard;
   if (gridSize === 5) weeklyPoolSize = 50;
   if (gridSize === 4) weeklyPoolSize = 32;
@@ -127,6 +129,7 @@ export function createCardFromPool(args: {
     );
   }
 
+  // Unique picks per card
   const picks = sampleUnique(pool, squaresPerCard, seed);
 
   const grid: string[][] = [];
@@ -160,14 +163,22 @@ export function createBingoPackFromMasterPool(args: {
   const uniquePool = uniqueStrings(masterPool);
   const cfg = getCardConfig(gridSize);
 
-  const weeklyPoolSize = Math.min(cfg.weeklyPoolSize, uniquePool.length);
-  const weeklyPool = sampleUnique(uniquePool, weeklyPoolSize, seed);
+  // ✅ IMPORTANT CHANGE:
+  // weeklyPool is now the FULL unique master pool (e.g., 100), not a 50-item subset.
+  const weeklyPool = uniquePool;
+
+  const squaresPerCard = cfg.squaresPerCard;
+  if (weeklyPool.length < squaresPerCard) {
+    throw new Error(
+      `Master pool too small. Need at least ${squaresPerCard} unique items for ${gridSize}x${gridSize}. Got ${weeklyPool.length}.`
+    );
+  }
 
   // generate cards with guaranteed unique grids
   const cards: BingoCard[] = [];
   const sigs = new Set<string>();
 
-  const maxAttempts = Math.max(1000, qty * 50);
+  const maxAttempts = Math.max(2000, qty * 80);
   let attempts = 0;
   let localSeed = seed ?? Math.floor(Math.random() * 1_000_000_000);
 
@@ -175,11 +186,13 @@ export function createBingoPackFromMasterPool(args: {
     attempts++;
     if (attempts > maxAttempts) {
       throw new Error(
-        `Could not generate ${qty} unique grids from weekly pool size ${weeklyPool.length}. Increase pool size or lower qty.`
+        `Could not generate ${qty} unique grids from master pool size ${weeklyPool.length}. Increase pool size or lower qty.`
       );
     }
 
     localSeed = (localSeed * 1103515245 + 12345) >>> 0;
+
+    // ✅ Cards draw from FULL master pool
     const card = createCardFromPool({
       pool: weeklyPool,
       gridSize,
@@ -210,13 +223,13 @@ export function createBingoPackFromMasterPool(args: {
     title,
     sponsorName,
     cards,
-    weeklyPool,
-    usedItems: Array.from(used),
+    weeklyPool, // FULL master pool (100)
+    usedItems: Array.from(used), // union across cards (Caller should draw from this)
     meta: {
       gridSize,
       freeCenter: cfg.freeCenter,
-      squaresPerCard: cfg.squaresPerCard,
-      weeklyPoolSize,
+      squaresPerCard,
+      weeklyPoolSize: weeklyPool.length,
       qty,
     },
   };
