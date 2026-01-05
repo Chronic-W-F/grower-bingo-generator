@@ -18,7 +18,7 @@ if (!admin.apps.length) {
     credential: admin.credential.cert({
       projectId: creds.project_id,
       clientEmail: creds.client_email,
-      privateKey: creds.private_key.replace(/\\n/g, "\n"),
+      privateKey: String(creds.private_key).replace(/\\n/g, "\n"),
     }),
   });
 }
@@ -52,7 +52,9 @@ export async function POST(req: Request) {
         : "Joe’s Grows";
 
     const bannerImageUrl =
-      typeof body.bannerImageUrl === "string" ? body.bannerImageUrl : undefined;
+      typeof body.bannerImageUrl === "string" && body.bannerImageUrl.trim()
+        ? body.bannerImageUrl.trim()
+        : undefined;
 
     // ---------- Pool input (accept ANY UI variant) ----------
     let itemsText = "";
@@ -73,7 +75,7 @@ export async function POST(req: Request) {
         itemsText = v;
         break;
       }
-      if (Array.isArray(v) && v.every((x) => typeof x === "string")) {
+      if (Array.isArray(v) && v.every((x: any) => typeof x === "string")) {
         itemsText = v.join("\n");
         break;
       }
@@ -88,7 +90,7 @@ export async function POST(req: Request) {
           error: `Need at least 24 pool items (one per line). Got: ${pool.length}`,
           debug: {
             receivedKeys: Object.keys(body ?? {}),
-            preview: itemsText.slice(0, 120),
+            preview: itemsText.slice(0, 180),
           },
         },
         { status: 400 }
@@ -108,10 +110,14 @@ export async function POST(req: Request) {
       })
     );
 
-    return new NextResponse(pdfBuffer, {
+    // ✅ Fix for TS/Vercel: wrap Buffer in Blob (BodyInit-safe)
+    const pdfBlob = new Blob([pdfBuffer], { type: "application/pdf" });
+
+    return new NextResponse(pdfBlob, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="bingo-cards.pdf"`,
+        "Cache-Control": "no-store",
       },
     });
   } catch (err: any) {
