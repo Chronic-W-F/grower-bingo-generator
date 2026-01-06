@@ -161,7 +161,12 @@ function downloadBase64Pdf(filename: string, base64: string) {
   URL.revokeObjectURL(url);
 }
 
-function downloadBlob(filename: string, blob: Blob) {
+function downloadTextFile(
+  filename: string,
+  text: string,
+  mime = "text/plain;charset=utf-8"
+) {
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -172,12 +177,7 @@ function downloadBlob(filename: string, blob: Blob) {
   URL.revokeObjectURL(url);
 }
 
-function downloadTextFile(
-  filename: string,
-  text: string,
-  mime = "text/plain;charset=utf-8"
-) {
-  const blob = new Blob([text], { type: mime });
+function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -209,13 +209,14 @@ export default function Page() {
   const [error, setError] = useState<string>("");
   const [info, setInfo] = useState<string>("");
 
-  // Single-card PDF selector
+  // Single-card download UI
+  const [singleOpen, setSingleOpen] = useState(false);
   const [singleCardId, setSingleCardId] = useState<string>("");
+  const [isSingleDownloading, setIsSingleDownloading] = useState(false);
 
   const poolLines = useMemo(() => normalizeLines(itemsText), [itemsText]);
   const poolCount = poolLines.length;
 
-  // Restore last pack so Back navigation doesn't gray out buttons
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(LAST_GENERATED_PACK_KEY);
@@ -223,16 +224,12 @@ export default function Page() {
       const restored = JSON.parse(raw) as GeneratedPack;
       if (restored?.pdfBase64 && restored?.requestKey) {
         setPack(restored);
-
-        const firstId = restored?.cardsPack?.cards?.[0]?.id;
-        if (firstId) setSingleCardId(firstId);
       }
     } catch {
       // ignore
     }
   }, []);
 
-  // Keep the shared pool synced for Caller reload
   useEffect(() => {
     try {
       window.localStorage.setItem(SHARED_POOL_KEY, poolLines.join("\n"));
@@ -240,12 +237,6 @@ export default function Page() {
       // ignore
     }
   }, [poolLines]);
-
-  // When pack changes, set default single card id to first card
-  useEffect(() => {
-    const first = pack?.cardsPack?.cards?.[0]?.id;
-    if (first) setSingleCardId(first);
-  }, [pack?.cardsPack?.packId]);
 
   function loadDefaults() {
     setItemsText(DEFAULT_ITEMS);
@@ -272,7 +263,6 @@ export default function Page() {
       return;
     }
 
-    // Ensure caller pool is synced before generating
     try {
       window.localStorage.setItem(SHARED_POOL_KEY, poolLines.join("\n"));
     } catch {
@@ -317,7 +307,6 @@ export default function Page() {
 
       setPack(nextPack);
 
-      // Persist generator state so Back button doesn't gray out everything
       try {
         window.localStorage.setItem(
           LAST_GENERATED_PACK_KEY,
@@ -327,7 +316,6 @@ export default function Page() {
         // ignore
       }
 
-      // Save last pack id and store a full pack object Caller can use
       if (data?.cardsPack?.packId) {
         try {
           const packId = data.cardsPack.packId;
@@ -352,7 +340,6 @@ export default function Page() {
         }
       }
 
-      // Option B: if API returns usedItems, sync those to Caller pool
       if (Array.isArray(data.usedItems) && data.usedItems.length) {
         try {
           window.localStorage.setItem(SHARED_POOL_KEY, data.usedItems.join("\n"));
@@ -361,7 +348,6 @@ export default function Page() {
         }
       }
 
-      // Auto download PDF
       const filename = `${safeFileName(title)}-${nextPack.requestKey}.pdf`;
 
       setTimeout(() => {
@@ -412,22 +398,26 @@ export default function Page() {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  function openSinglePicker() {
+    setError("");
+    setInfo("");
+
+    const firstId = pack?.cardsPack?.cards?.[0]?.id || "";
+    setSingleCardId(firstId);
+    setSingleOpen(true);
+  }
+
   async function downloadSingleCardPdf() {
     setError("");
     setInfo("");
 
-    const cards = pack?.cardsPack?.cards || [];
-    if (!cards.length) {
-      setError("Generate a pack first (need cardsPack).");
+    const card = pack?.cardsPack?.cards?.find((c) => c.id === singleCardId);
+    if (!card) {
+      setError("Select a card first.");
       return;
     }
 
-    const chosen = cards.find((c) => c.id === singleCardId) || cards[0];
-    if (!chosen) {
-      setError("No card found.");
-      return;
-    }
-
+    setIsSingleDownloading(true);
     try {
       const res = await fetch("/api/card-pdf", {
         method: "POST",
@@ -436,26 +426,44 @@ export default function Page() {
           title,
           sponsorName,
           bannerImageUrl,
-          card: chosen,
+          card,
         }),
       });
 
+      // If the API returned an error JSON, do not attempt download
+      const ct = res.headers.get("content-type") || "";
       if (!res.ok) {
-        const text = await res.text();
-        setError(text || "Single card PDF failed.");
+        if (ct.includes("application/json")) {
+          const j = await res.json();
+          setError(j?.error || "Single card PDF failed.");
+        } else {
+          const t = await res.text();
+          setError(t || "Single card PDF failed.");
+        }
+        return;
+      }
+
+      if (!ct.includes("application/pdf")) {
+        // Something went wrong upstream, show the text so we can debug
+        const t = ct.includes("application/json") ? JSON.stringify(await res.json()) : await res.text();
+        setError(`Expected PDF but got: ${ct || "unknown content-type"}. Response: ${t.slice(0, 300)}`);
         return;
       }
 
       const blob = await res.blob();
-      const filename = `${safeFileName(title)}-${chosen.id}.pdf`;
+      const filename = `bingo-card-${card.id}.pdf`;
+
+      // This is the Android-safe download path (no direct URL navigation)
       downloadBlob(filename, blob);
-      setInfo(`Downloaded single card PDF for ${chosen.id}.`);
+
+      setInfo(`Downloaded single card: ${card.id}`);
+      setSingleOpen(false);
     } catch (e: any) {
       setError(e?.message || "Single card PDF failed.");
+    } finally {
+      setIsSingleDownloading(false);
     }
   }
-
-  const cardCount = pack?.cardsPack?.cards?.length || 0;
 
   return (
     <div
@@ -681,6 +689,21 @@ export default function Page() {
             </button>
 
             <button
+              onClick={openSinglePicker}
+              disabled={!pack?.cardsPack?.cards?.length}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "1px solid #111827",
+                background: !pack?.cardsPack?.cards?.length ? "#9ca3af" : "white",
+                cursor: !pack?.cardsPack?.cards?.length ? "not-allowed" : "pointer",
+                minWidth: 220,
+              }}
+            >
+              Download 1 Card PDF
+            </button>
+
+            <button
               onClick={openWinners}
               disabled={!pack?.cardsPack?.packId && !pack?.requestKey}
               style={{
@@ -715,63 +738,6 @@ export default function Page() {
             </a>
           </div>
 
-          {/* Single-card PDF section */}
-          <div
-            style={{
-              marginTop: 14,
-              paddingTop: 14,
-              borderTop: "1px solid #e5e7eb",
-            }}
-          >
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>
-              Single card PDF
-            </div>
-
-            <div style={{ fontSize: 13, color: "#374151", marginBottom: 10 }}>
-              Generate a pack first. Then select a Card ID and download just that card as a 1-page PDF.
-            </div>
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <select
-                value={singleCardId}
-                onChange={(e) => setSingleCardId(e.target.value)}
-                disabled={!cardCount}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #d1d5db",
-                  minWidth: 280,
-                  background: !cardCount ? "#f3f4f6" : "white",
-                }}
-              >
-                {!cardCount ? (
-                  <option value="">Generate a pack first</option>
-                ) : (
-                  pack?.cardsPack?.cards.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.id}
-                    </option>
-                  ))
-                )}
-              </select>
-
-              <button
-                onClick={downloadSingleCardPdf}
-                disabled={!cardCount}
-                style={{
-                  padding: "12px 16px",
-                  borderRadius: 12,
-                  border: "1px solid #111827",
-                  background: !cardCount ? "#9ca3af" : "white",
-                  cursor: !cardCount ? "not-allowed" : "pointer",
-                  minWidth: 220,
-                }}
-              >
-                Download selected card PDF
-              </button>
-            </div>
-          </div>
-
           {error ? (
             <div style={{ marginTop: 10, color: "#b91c1c", fontWeight: 600 }}>
               {error}
@@ -780,6 +746,98 @@ export default function Page() {
           {info ? <div style={{ marginTop: 10, color: "#111827" }}>{info}</div> : null}
         </div>
       </div>
+
+      {/* Single-card picker modal */}
+      {singleOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+            zIndex: 9999,
+          }}
+          onClick={() => {
+            if (!isSingleDownloading) setSingleOpen(false);
+          }}
+        >
+          <div
+            style={{
+              width: "min(720px, 100%)",
+              background: "white",
+              borderRadius: 14,
+              padding: 16,
+              border: "1px solid #e5e7eb",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>Download 1 Card PDF</div>
+              <button
+                onClick={() => setSingleOpen(false)}
+                disabled={isSingleDownloading}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #111827",
+                  background: "white",
+                  cursor: isSingleDownloading ? "not-allowed" : "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              <div style={{ fontSize: 13, color: "#6b7280" }}>
+                Select a Card ID from this pack.
+              </div>
+
+              <select
+                value={singleCardId}
+                onChange={(e) => setSingleCardId(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: 12,
+                  borderRadius: 10,
+                  border: "1px solid #d1d5db",
+                  fontSize: 16,
+                }}
+              >
+                {(pack?.cardsPack?.cards || []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.id}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={downloadSingleCardPdf}
+                disabled={isSingleDownloading}
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  border: "1px solid #111827",
+                  background: isSingleDownloading ? "#9ca3af" : "#111827",
+                  color: "white",
+                  cursor: isSingleDownloading ? "not-allowed" : "pointer",
+                  minWidth: 240,
+                }}
+              >
+                {isSingleDownloading ? "Downloading..." : "Download selected card"}
+              </button>
+
+              <div style={{ fontSize: 12, color: "#6b7280" }}>
+                This uses fetch + blob download to avoid Android Chrome “Google download error”.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
-            }
+}
