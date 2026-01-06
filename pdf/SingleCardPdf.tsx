@@ -11,12 +11,16 @@ type BingoCard = {
 type Props = {
   title?: string;
   sponsorName?: string;
-  bannerImageUrl?: string;   // can be "/banners/current.png" or full URL or data URI
-  sponsorLogoUrl?: string;   // optional for center square
+  bannerImageUrl?: string;   // "/banners/current.png", full URL, or data URI
+  sponsorLogoUrl?: string;   // optional center square logo
   card: BingoCard;
 };
 
 const CENTER_LABEL = "Joe’s Grows";
+
+// Match pack PDF banner behavior
+const BANNER_HEIGHT = 70;
+const BANNER_MARGIN_BOTTOM = 10;
 
 const styles = StyleSheet.create({
   page: {
@@ -29,25 +33,33 @@ const styles = StyleSheet.create({
 
   header: {
     marginBottom: 10,
-    borderRadius: 10,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
+    alignItems: "center",
+  },
+
+  bannerWrap: {
+    width: "100%",
+    height: BANNER_HEIGHT,
+    marginBottom: BANNER_MARGIN_BOTTOM,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
   },
 
   banner: {
     width: "100%",
-    height: 70,
-    objectFit: "cover",
+    height: "100%",
+    objectFit: "contain",
   },
 
   headerTextWrap: {
-    padding: 10,
+    width: "100%",
+    alignItems: "center",
   },
 
   title: {
     fontSize: 18,
     fontWeight: 700,
+    textAlign: "center",
   },
 
   subtitleRow: {
@@ -56,6 +68,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 10,
+    width: "100%",
   },
 
   subtitle: {
@@ -122,7 +135,11 @@ const styles = StyleSheet.create({
 });
 
 function normKey(s: string) {
-  return (s || "").trim().replace(/\s+/g, " ").replace(/[’‘]/g, "'").toLowerCase();
+  return (s || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[’‘]/g, "'")
+    .toLowerCase();
 }
 
 function isCenter(cell: string) {
@@ -139,19 +156,27 @@ export default function SingleCardPdf(props: Props) {
   return (
     <Document>
       <Page size="LETTER" style={styles.page}>
+        {/* Header */}
         <View style={styles.header}>
-          {bannerImageUrl ? <Image src={bannerImageUrl} style={styles.banner} /> : null}
+          {bannerImageUrl ? (
+            <View style={styles.bannerWrap}>
+              <Image src={bannerImageUrl} style={styles.banner as any} />
+            </View>
+          ) : null}
 
           <View style={styles.headerTextWrap}>
             <Text style={styles.title}>{title}</Text>
 
             <View style={styles.subtitleRow}>
               <Text style={styles.subtitle}>Card ID: {card.id}</Text>
-              <Text style={styles.subtitle}>{sponsorName ? `Sponsor: ${sponsorName}` : ""}</Text>
+              <Text style={styles.subtitle}>
+                {sponsorName ? `Sponsor: ${sponsorName}` : ""}
+              </Text>
             </View>
           </View>
         </View>
 
+        {/* Grid */}
         <View style={styles.grid}>
           {card.grid.map((row, rIdx) => {
             const isLastRow = rIdx === card.grid.length - 1;
@@ -167,7 +192,6 @@ export default function SingleCardPdf(props: Props) {
 
                   const cellNorm = normKey(cell);
                   const iconSrc = ICON_MAP?.[cellNorm];
-
                   const showSponsorLogo = isCenter(cell) && sponsorLogoUrl;
 
                   return (
@@ -187,6 +211,7 @@ export default function SingleCardPdf(props: Props) {
           })}
         </View>
 
+        {/* Footer */}
         <View style={styles.footer}>
           <Text>Grower Bingo</Text>
           <Text>Center is FREE</Text>
