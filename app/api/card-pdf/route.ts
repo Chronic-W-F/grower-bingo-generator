@@ -1,8 +1,7 @@
 // app/api/card-pdf/route.ts
-import { NextResponse } from "next/server";
-import { pdf } from "@react-pdf/renderer";
 import React from "react";
-import BingoPackPdf from "@/pdf/BingoPackPdf";
+import { renderToBuffer } from "@react-pdf/renderer";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
@@ -15,43 +14,26 @@ type Body = {
   title?: string;
   sponsorName?: string;
   bannerImageUrl?: string; // "/banners/current.png" or https://...
+  sponsorLogoUrl?: string; // optional if your PDF supports it
   card: BingoCard;
 };
 
-function toAbsoluteUrl(reqUrl: string, maybeRelative?: string) {
-  if (!maybeRelative) return undefined;
+function sanitizeFilename(input: string) {
+  return (input || "")
+    .replace(/[^\w\-\. ]+/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+}
 
-  // already absolute?
+function toAbsoluteUrl(reqUrl: string, maybeRelative?: string) {
+  if (!maybeRelative) return "";
   try {
-    const u = new URL(maybeRelative);
-    return u.toString();
+    // already absolute?
+    return new URL(maybeRelative).toString();
   } catch {
     const base = new URL(reqUrl);
     return new URL(maybeRelative, `${base.protocol}//${base.host}`).toString();
   }
-}
-
-async function readStreamToUint8Array(stream: ReadableStream<Uint8Array>) {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      chunks.push(value);
-      total += value.length;
-    }
-  }
-
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    out.set(c, offset);
-    offset += c.length;
-  }
-  return out;
 }
 
 export async function POST(req: Request) {
@@ -68,35 +50,37 @@ export async function POST(req: Request) {
     const title = body.title || "Harvest Heroes Bingo";
     const sponsorName = body.sponsorName || "";
     const bannerImageUrl = toAbsoluteUrl(req.url, body.bannerImageUrl);
+    const sponsorLogoUrl = toAbsoluteUrl(req.url, body.sponsorLogoUrl);
 
-    // No JSX in .ts route: React.createElement
+    // If your BingoPackPdf is default export (it is, based on your import)
+    const mod = await import("@/pdf/BingoPackPdf");
+    const BingoPackPdf = (mod as any).default ?? (mod as any).BingoPackPdf;
+
+    if (!BingoPackPdf) {
+      return NextResponse.json(
+        { ok: false, error: "BingoPackPdf export not found." },
+        { status: 500 }
+      );
+    }
+
+    // No JSX in route.ts: use createElement
     const doc = React.createElement(BingoPackPdf, {
       cards: [body.card],
       title,
       sponsorName,
-      bannerImageUrl,
+      bannerImageUrl: bannerImageUrl || undefined,
+      sponsorLogoUrl: sponsorLogoUrl || undefined,
     });
 
-    // Some builds return Buffer/Uint8Array, others return ReadableStream
-    const result = await (pdf(doc) as any).toBuffer();
+    const buffer = await renderToBuffer(doc);
 
-    let bytes: Uint8Array;
+    const filename =
+      sanitizeFilename(`bingo-card-${body.card.id}.pdf`) || "bingo-card.pdf";
 
-    if (result instanceof Uint8Array) {
-      bytes = result;
-    } else if (result && typeof result.getReader === "function") {
-      bytes = await readStreamToUint8Array(result as ReadableStream<Uint8Array>);
-    } else {
-      bytes = new Uint8Array(result);
-    }
-
-    // ✅ Key fix: Buffer body (and cast) avoids TS BodyInit/ArrayBufferLike mismatch
-    const out = Buffer.from(bytes);
-
-    return new NextResponse(out as any, {
+    return new Response(buffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="bingo-card-${body.card.id}.pdf"`,
+        "Content-Disposition": `attachment; filename="${filename}"`,
         "Cache-Control": "no-store",
       },
     });
