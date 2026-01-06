@@ -1,84 +1,197 @@
-import { NextResponse } from "next/server";
+// pdf/SingleCardPdf.tsx
 import React from "react";
-import { pdf } from "@react-pdf/renderer";
-import { SingleCardPdf } from "@/pdf/SingleCardPdf";
+import { Document, Page, View, Text, StyleSheet, Image } from "@react-pdf/renderer";
+import { ICON_MAP } from "@/lib/iconMap";
 
-// react-pdf must run in Node.js on Vercel
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+type BingoCard = {
+  id: string;
+  grid: string[][];
+};
 
-type BingoCard = { id: string; grid: string[][] };
-
-type Body = {
+type Props = {
   title?: string;
   sponsorName?: string;
-  bannerImageUrl?: string;
-  sponsorLogoUrl?: string;
+  bannerImageUrl?: string;   // can be "/banners/current.png" or full URL or data URI
+  sponsorLogoUrl?: string;   // optional for center square
   card: BingoCard;
 };
 
-function sanitizeFilename(name: string) {
-  const base = (name || "")
-    .replace(/[/\\?%*:|"<>]/g, "-")
-    .replace(/\s+/g, "_")
-    .trim();
-  return base || "bingo-card.pdf";
+const CENTER_LABEL = "Joe’s Grows";
+
+const styles = StyleSheet.create({
+  page: {
+    paddingTop: 18,
+    paddingBottom: 18,
+    paddingHorizontal: 18,
+    fontSize: 10,
+    fontFamily: "Helvetica",
+  },
+
+  header: {
+    marginBottom: 10,
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+
+  banner: {
+    width: "100%",
+    height: 70,
+    objectFit: "cover",
+  },
+
+  headerTextWrap: {
+    padding: 10,
+  },
+
+  title: {
+    fontSize: 18,
+    fontWeight: 700,
+  },
+
+  subtitleRow: {
+    marginTop: 4,
+    display: "flex",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  subtitle: {
+    fontSize: 10,
+    color: "#374151",
+  },
+
+  grid: {
+    display: "flex",
+    flexDirection: "column",
+    borderWidth: 1,
+    borderColor: "#111827",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+
+  row: {
+    display: "flex",
+    flexDirection: "row",
+  },
+
+  cell: {
+    width: "20%",
+    aspectRatio: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#111827",
+    padding: 6,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+
+  cellLastInRow: {
+    borderRightWidth: 0,
+  },
+
+  rowLast: {
+    borderBottomWidth: 0,
+  },
+
+  cellText: {
+    textAlign: "center",
+    fontSize: 9,
+    lineHeight: 1.15,
+  },
+
+  icon: {
+    width: 22,
+    height: 22,
+    objectFit: "contain",
+    marginBottom: 2,
+  },
+
+  footer: {
+    marginTop: 10,
+    fontSize: 9,
+    color: "#6b7280",
+    display: "flex",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+});
+
+function normKey(s: string) {
+  return (s || "").trim().replace(/\s+/g, " ").replace(/[’‘]/g, "'").toLowerCase();
 }
 
-function bufferToStream(buf: Buffer): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(new Uint8Array(buf));
-      controller.close();
-    },
-  });
+function isCenter(cell: string) {
+  return normKey(cell) === normKey(CENTER_LABEL);
 }
 
-export async function POST(req: Request) {
-  try {
-    const body = (await req.json()) as Body;
+export default function SingleCardPdf(props: Props) {
+  const title = props.title || "Bingo Card";
+  const sponsorName = props.sponsorName || "";
+  const bannerImageUrl = props.bannerImageUrl || "";
+  const sponsorLogoUrl = props.sponsorLogoUrl || "";
+  const card = props.card;
 
-    if (!body?.card?.id || !Array.isArray(body.card.grid)) {
-      return NextResponse.json(
-        { error: "Invalid payload. Missing card.id or card.grid." },
-        { status: 400 }
-      );
-    }
+  return (
+    <Document>
+      <Page size="LETTER" style={styles.page}>
+        <View style={styles.header}>
+          {bannerImageUrl ? <Image src={bannerImageUrl} style={styles.banner} /> : null}
 
-    const doc = (
-      <SingleCardPdf
-        title={body.title || "Bingo Card"}
-        sponsorName={body.sponsorName || ""}
-        bannerImageUrl={body.bannerImageUrl || ""}
-        sponsorLogoUrl={body.sponsorLogoUrl || ""}
-        card={body.card}
-      />
-    );
+          <View style={styles.headerTextWrap}>
+            <Text style={styles.title}>{title}</Text>
 
-    const buf = await pdf(doc).toBuffer();
+            <View style={styles.subtitleRow}>
+              <Text style={styles.subtitle}>Card ID: {card.id}</Text>
+              <Text style={styles.subtitle}>{sponsorName ? `Sponsor: ${sponsorName}` : ""}</Text>
+            </View>
+          </View>
+        </View>
 
-    if (!buf || buf.length < 500) {
-      return NextResponse.json(
-        { error: `PDF render returned too few bytes (${buf?.length ?? 0}).` },
-        { status: 500 }
-      );
-    }
+        <View style={styles.grid}>
+          {card.grid.map((row, rIdx) => {
+            const isLastRow = rIdx === card.grid.length - 1;
 
-    const filename = sanitizeFilename(`bingo-card-${body.card.id}.pdf`);
+            return (
+              <View key={rIdx} style={styles.row}>
+                {row.map((cell, cIdx) => {
+                  const isLastCol = cIdx === row.length - 1;
 
-    return new Response(bufferToStream(buf), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-store",
-      },
-    });
-  } catch (err: any) {
-    const message = err?.message ? String(err.message) : String(err);
-    return NextResponse.json(
-      { error: "card-pdf crashed", message },
-      { status: 500 }
-    );
-  }
+                  const cellStyles: any[] = [styles.cell];
+                  if (isLastCol) cellStyles.push(styles.cellLastInRow);
+                  if (isLastRow) cellStyles.push(styles.rowLast);
+
+                  const cellNorm = normKey(cell);
+                  const iconSrc = ICON_MAP?.[cellNorm];
+
+                  const showSponsorLogo = isCenter(cell) && sponsorLogoUrl;
+
+                  return (
+                    <View key={cIdx} style={cellStyles}>
+                      {showSponsorLogo ? (
+                        <Image src={sponsorLogoUrl} style={styles.icon} />
+                      ) : iconSrc ? (
+                        <Image src={iconSrc} style={styles.icon} />
+                      ) : null}
+
+                      <Text style={styles.cellText}>{cell}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={styles.footer}>
+          <Text>Grower Bingo</Text>
+          <Text>Center is FREE</Text>
+        </View>
+      </Page>
+    </Document>
+  );
 }
