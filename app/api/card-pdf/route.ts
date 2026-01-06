@@ -45,14 +45,14 @@ export async function POST(req: Request) {
       card: body.card,
     });
 
-    // ✅ THIS is the critical fix
     const buffer = await renderToBuffer(doc);
 
     const filename = `${sanitizeFilename(
       body.title || "bingo-card"
     )}-${body.card.id}.pdf`;
 
-    return new Response(buffer, {
+    // ✅ Convert Buffer -> Uint8Array for Response body typing
+    return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
