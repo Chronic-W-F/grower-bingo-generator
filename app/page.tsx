@@ -88,7 +88,7 @@ Drain clog
 Overflow scare
 Salt buildup
 Biofilm
-Bennies added
+Beneficials added
 H2O2 debate
 Silica added
 PK boost
