@@ -158,7 +158,13 @@ function downloadBase64Pdf(filename: string, base64: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+
+  // Android Chrome: do not revoke immediately
+  setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {}
+  }, 1500);
 }
 
 function downloadTextFile(
@@ -174,7 +180,11 @@ function downloadTextFile(
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {}
+  }, 1500);
 }
 
 function downloadBlob(filename: string, blob: Blob) {
@@ -182,10 +192,19 @@ function downloadBlob(filename: string, blob: Blob) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.rel = "noopener";
+  a.style.display = "none";
   document.body.appendChild(a);
   a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+
+  setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {}
+    try {
+      a.remove();
+    } catch {}
+  }, 1500);
 }
 
 function downloadJsonFile(filename: string, obj: unknown) {
@@ -401,12 +420,13 @@ export default function Page() {
   function openSinglePicker() {
     setError("");
     setInfo("");
-
     const firstId = pack?.cardsPack?.cards?.[0]?.id || "";
     setSingleCardId(firstId);
     setSingleOpen(true);
   }
 
+  // This version is the Android/Chrome safe path:
+  // Open a tab immediately (user gesture), then later navigate that tab to the Blob URL.
   async function downloadSingleCardPdf() {
     setError("");
     setInfo("");
@@ -418,6 +438,20 @@ export default function Page() {
     }
 
     setIsSingleDownloading(true);
+
+    // Must happen immediately on click for Android Chrome
+    const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+    if (w) {
+      try {
+        w.document.write(
+          `<html><head><title>Preparing download…</title></head><body style="font-family:system-ui;padding:16px">Preparing your PDF…</body></html>`
+        );
+        w.document.close();
+      } catch {
+        // ignore cross-origin quirks
+      }
+    }
+
     try {
       const res = await fetch("/api/card-pdf", {
         method: "POST",
@@ -430,9 +464,13 @@ export default function Page() {
         }),
       });
 
-      // If the API returned an error JSON, do not attempt download
       const ct = res.headers.get("content-type") || "";
       if (!res.ok) {
+        if (w) {
+          try {
+            w.close();
+          } catch {}
+        }
         if (ct.includes("application/json")) {
           const j = await res.json();
           setError(j?.error || "Single card PDF failed.");
@@ -443,22 +481,59 @@ export default function Page() {
         return;
       }
 
-      if (!ct.includes("application/pdf")) {
-        // Something went wrong upstream, show the text so we can debug
-        const t = ct.includes("application/json") ? JSON.stringify(await res.json()) : await res.text();
-        setError(`Expected PDF but got: ${ct || "unknown content-type"}. Response: ${t.slice(0, 300)}`);
+      const blob = await res.blob();
+
+      // sanity check: if API returns HTML/JSON, this will often be tiny
+      if (blob.size < 500) {
+        const t = await blob.text().catch(() => "");
+        if (w) {
+          try {
+            w.close();
+          } catch {}
+        }
+        setError(
+          `Single card download returned tiny file (${blob.size}). ${t.slice(0, 200)}`
+        );
         return;
       }
 
-      const blob = await res.blob();
       const filename = `bingo-card-${card.id}.pdf`;
 
-      // This is the Android-safe download path (no direct URL navigation)
-      downloadBlob(filename, blob);
+      const blobUrl = URL.createObjectURL(blob);
+
+      if (w) {
+        // Navigate the opened tab to the blob URL (works better on Android)
+        try {
+          w.location.href = blobUrl;
+        } catch {
+          // fallback
+          downloadBlob(filename, blob);
+        }
+
+        // revoke later (Android)
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(blobUrl);
+          } catch {}
+        }, 5000);
+      } else {
+        // Popup blocked: fallback to anchor download
+        downloadBlob(filename, blob);
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(blobUrl);
+          } catch {}
+        }, 5000);
+      }
 
       setInfo(`Downloaded single card: ${card.id}`);
       setSingleOpen(false);
     } catch (e: any) {
+      if (w) {
+        try {
+          w.close();
+        } catch {}
+      }
       setError(e?.message || "Single card PDF failed.");
     } finally {
       setIsSingleDownloading(false);
@@ -832,7 +907,8 @@ export default function Page() {
               </button>
 
               <div style={{ fontSize: 12, color: "#6b7280" }}>
-                This uses fetch + blob download to avoid Android Chrome “Google download error”.
+                If you do not see a download, your browser may be blocking popups.
+                Allow popups for this site and try again.
               </div>
             </div>
           </div>
