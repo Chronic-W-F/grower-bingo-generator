@@ -1,7 +1,7 @@
-// app/api/card-pdf/route.ts
-import React from "react";
-import { renderToBuffer } from "@react-pdf/renderer";
 import { NextResponse } from "next/server";
+import { pdf } from "@react-pdf/renderer";
+import React from "react";
+import BingoPackPdf from "@/pdf/BingoPackPdf";
 
 export const runtime = "nodejs";
 
@@ -14,21 +14,18 @@ type Body = {
   title?: string;
   sponsorName?: string;
   bannerImageUrl?: string; // "/banners/current.png" or https://...
-  sponsorLogoUrl?: string; // optional if your PDF supports it
   card: BingoCard;
 };
 
-function sanitizeFilename(input: string) {
-  return (input || "")
-    .replace(/[^\w\-\. ]+/g, "")
-    .trim()
-    .replace(/\s+/g, "_");
-}
-
+/**
+ * Convert relative URLs (like /banners/current.png) into absolute URLs
+ * so @react-pdf can fetch them on the server.
+ */
 function toAbsoluteUrl(reqUrl: string, maybeRelative?: string) {
-  if (!maybeRelative) return "";
+  if (!maybeRelative) return undefined;
+
   try {
-    // already absolute?
+    // already absolute
     return new URL(maybeRelative).toString();
   } catch {
     const base = new URL(reqUrl);
@@ -50,37 +47,37 @@ export async function POST(req: Request) {
     const title = body.title || "Harvest Heroes Bingo";
     const sponsorName = body.sponsorName || "";
     const bannerImageUrl = toAbsoluteUrl(req.url, body.bannerImageUrl);
-    const sponsorLogoUrl = toAbsoluteUrl(req.url, body.sponsorLogoUrl);
 
-    // If your BingoPackPdf is default export (it is, based on your import)
-    const mod = await import("@/pdf/BingoPackPdf");
-    const BingoPackPdf = (mod as any).default ?? (mod as any).BingoPackPdf;
-
-    if (!BingoPackPdf) {
-      return NextResponse.json(
-        { ok: false, error: "BingoPackPdf export not found." },
-        { status: 500 }
-      );
-    }
-
-    // No JSX in route.ts: use createElement
+    /**
+     * IMPORTANT:
+     * No JSX in .ts route files — use React.createElement
+     */
     const doc = React.createElement(BingoPackPdf, {
       cards: [body.card],
       title,
       sponsorName,
-      bannerImageUrl: bannerImageUrl || undefined,
-      sponsorLogoUrl: sponsorLogoUrl || undefined,
+      bannerImageUrl,
     });
 
-    const buffer = await renderToBuffer(doc);
+    /**
+     * react-pdf returns a Node Buffer here
+     */
+    const buffer: Buffer = await pdf(doc).toBuffer();
 
-    const filename =
-      sanitizeFilename(`bingo-card-${body.card.id}.pdf`) || "bingo-card.pdf";
+    /**
+     * ✅ CRITICAL FIX
+     * Convert Buffer → ArrayBuffer slice
+     * This is a valid Web Response BodyInit
+     */
+    const arrayBuffer = buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength
+    );
 
-    return new Response(buffer, {
+    return new Response(arrayBuffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": `attachment; filename="bingo-card-${body.card.id}.pdf"`,
         "Cache-Control": "no-store",
       },
     });
