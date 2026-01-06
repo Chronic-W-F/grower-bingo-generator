@@ -36,7 +36,7 @@ Foxtails
 Amber trichomes
 Cloudy trichomes
 Flush debate
-Leaf taco
+Fire genetics
 Stunted growth
 Light burn
 Cal-Mag
@@ -47,7 +47,7 @@ Powdery mildew
 Fungus gnats
 Bud rot
 Nute lockout
-Late flower fade
+Photos
 Taco leaves
 Clawing
 Nitrogen toxicity
@@ -96,7 +96,7 @@ KoolBloom week
 Transition stretch
 Week 3 frost
 Week 6 swell
-Late flower fade (nice)
+Flower fade 
 Sugar leaves
 Leaf strip
 LST tie-down
@@ -131,7 +131,10 @@ IPM spray
 Neem debate
 Spinosad talk
 Predator mites
-Ladybugs released`;
+Ladybugs released
+Chlorosis spreading
+Overfed tips
+Sugar leaf curl`;
 
 function normalizeLines(text: string): string[] {
   return text
