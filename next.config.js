@@ -2,24 +2,18 @@
 
 const withPWA = require("next-pwa")({
   dest: "public",
+  register: true,
+  skipWaiting: true,
   disable: process.env.NODE_ENV === "development",
-
-  // critical: never cache API routes
-  runtimeCaching: [
-    {
-      urlPattern: /^https?.*/,
-      handler: "NetworkOnly",
-      options: {
-        cacheName: "no-cache-anywhere",
-      },
-    },
-  ],
 });
 
 const nextConfig = {
   reactStrictMode: false,
-  experimental: {
-    appDir: true,
+
+  // Required so @react-pdf/renderer works on Vercel
+  webpack(config) {
+    config.resolve.alias.canvas = false;
+    return config;
   },
 };
 
