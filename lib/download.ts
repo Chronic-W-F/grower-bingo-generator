@@ -1,19 +1,19 @@
-// lib/download.ts (or paste into your page/component)
-// Fixes Android/Chrome "Download error" by delaying revokeObjectURL.
-
+// lib/download.ts
 export function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
-
+  a.style.display = "none";
   document.body.appendChild(a);
-  a.click();
-  a.remove();
 
-  // ✅ Do NOT revoke immediately on Android Chrome
+  // Must happen from a user gesture (button click handler calls this)
+  a.click();
+
+  // Do NOT revoke immediately on Android Chrome
   setTimeout(() => {
     URL.revokeObjectURL(url);
-  }, 60_000);
+    a.remove();
+  }, 30_000); // 30s is safe
 }
