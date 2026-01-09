@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { downloadSingleCardPdf as downloadOneCard } from "@/lib/downloadSingleCard";
 
 type CardsPack = {
   packId: string;
@@ -424,6 +425,7 @@ export default function Page() {
     setSingleOpen(true);
   }
 
+  // ✅ FIXED: no popup tab, use downloadOneCard helper (POST -> blob -> download)
   async function downloadSingleCardPdf() {
     setError("");
     setInfo("");
@@ -435,63 +437,18 @@ export default function Page() {
     }
 
     setIsSingleDownloading(true);
-
-    const w = window.open("about:blank", "_blank", "noopener,noreferrer");
-    if (w) {
-      try {
-        w.document.write(
-          `<html><head><title>Preparing download…</title></head><body style="font-family:system-ui;padding:16px">Preparing your PDF…</body></html>`
-        );
-        w.document.close();
-      } catch {}
-    }
-
     try {
-      const res = await fetch("/api/card-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          sponsorName,
-          bannerImageUrl,
-          card,
-        }),
+      await downloadOneCard({
+        title,
+        sponsorName,
+        bannerImageUrl,
+        sponsorLogoUrl,
+        card,
       });
-
-      if (!res.ok) {
-        if (w) {
-          try {
-            w.close();
-          } catch {}
-        }
-        const j = await res.json().catch(() => null);
-        setError(j?.error || "Single card PDF failed.");
-        return;
-      }
-
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-
-      if (w) {
-        try {
-          w.location.href = blobUrl;
-        } catch {}
-      }
-
-      setTimeout(() => {
-        try {
-          URL.revokeObjectURL(blobUrl);
-        } catch {}
-      }, 5000);
 
       setInfo(`Downloaded single card: ${card.id}`);
       setSingleOpen(false);
     } catch (e: any) {
-      if (w) {
-        try {
-          w.close();
-        } catch {}
-      }
       setError(e?.message || "Single card PDF failed.");
     } finally {
       setIsSingleDownloading(false);
@@ -861,8 +818,8 @@ export default function Page() {
               </button>
 
               <div style={{ fontSize: 12, color: "#6b7280" }}>
-                If you do not see a download, your browser may be blocking popups.
-                Allow popups for this site and try again.
+                If you do not see a download, your browser may be blocking downloads.
+                Try again or use the Winners page download.
               </div>
             </div>
           </div>
