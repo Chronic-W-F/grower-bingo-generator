@@ -33,8 +33,11 @@ function resolveBestPackId(): string {
   const lp = window.localStorage.getItem(LAST_PACK_KEY) || "";
 
   // Prefer the last generated pack (fixes "stuck packId" after regenerating)
-  const restored = safeJsonParse<any>(window.localStorage.getItem(LAST_GENERATED_PACK_KEY));
-  const restoredPackId = restored?.cardsPack?.packId || restored?.requestKey || "";
+  const restored = safeJsonParse<any>(
+    window.localStorage.getItem(LAST_GENERATED_PACK_KEY)
+  );
+  const restoredPackId =
+    restored?.cardsPack?.packId || restored?.requestKey || "";
 
   return restoredPackId || lp || "pack_unknown";
 }
@@ -85,7 +88,9 @@ function savePackToLocalStorage(packId: string, pack: CardsPack) {
 
 async function fetchPackFromApi(packId: string): Promise<CardsPack | null> {
   try {
-    const res = await fetch(`/api/packs/${encodeURIComponent(packId)}`, { cache: "no-store" });
+    const res = await fetch(`/api/packs/${encodeURIComponent(packId)}`, {
+      cache: "no-store",
+    });
     const data = await res.json();
     if (!data?.ok || !data?.pack) return null;
     return data.pack as CardsPack;
@@ -124,18 +129,22 @@ function loadAssignment(packId: string, cardId: string): Assignment {
 
 function saveAssignment(packId: string, cardId: string, a: Assignment) {
   try {
-    window.localStorage.setItem(assignmentKey(packId, cardId), JSON.stringify(a));
+    window.localStorage.setItem(
+      assignmentKey(packId, cardId),
+      JSON.stringify(a)
+    );
   } catch {
     // ignore
   }
 }
 
 function buildCardUrl(origin: string, packId: string, cardId: string) {
-  return `${origin}/card/${encodeURIComponent(packId)}/${encodeURIComponent(cardId)}`;
+  return `${origin}/card/${encodeURIComponent(packId)}/${encodeURIComponent(
+    cardId
+  )}`;
 }
 
 // This is only for the "Expected completion" display you already have.
-// We will compute "x/24 called matches on this card", ignoring center.
 function computeCalledMatches(card: BingoCard, called: string[]) {
   const size = card.grid.length;
   const center = Math.floor(size / 2);
@@ -150,6 +159,36 @@ function computeCalledMatches(card: BingoCard, called: string[]) {
     }
   }
   return hits; // out of 24 for 5x5
+}
+
+// Reliable browser download for mobile
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
+async function downloadSingleCardPdf(packId: string, cardId: string) {
+  // expects your existing endpoint: POST /api/card-pdf -> application/pdf
+  const res = await fetch("/api/card-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ packId, cardId }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Download failed (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const filename = `bingo-${packId}-${cardId}.pdf`;
+  downloadBlob(filename, blob);
 }
 
 export default function WinnersPage({
@@ -168,7 +207,12 @@ export default function WinnersPage({
   const [activeCopyUrl, setActiveCopyUrl] = useState<string>("");
 
   // assignment state map (in-memory) for fast UI
-  const [assignments, setAssignments] = useState<Record<string, Assignment>>({});
+  const [assignments, setAssignments] = useState<Record<string, Assignment>>(
+    {}
+  );
+
+  const [downloadingCardId, setDownloadingCardId] = useState<string>("");
+  const [downloadError, setDownloadError] = useState<string>("");
 
   useEffect(() => {
     try {
@@ -183,8 +227,12 @@ export default function WinnersPage({
     const pId = String(params.packId || "").trim() || resolveBestPackId();
     setPackId(pId);
 
-    const byPack = safeJsonParse<CallerState>(window.localStorage.getItem(packCallerKey(pId)));
-    const global = safeJsonParse<CallerState>(window.localStorage.getItem(CALLER_STATE_KEY));
+    const byPack = safeJsonParse<CallerState>(
+      window.localStorage.getItem(packCallerKey(pId))
+    );
+    const global = safeJsonParse<CallerState>(
+      window.localStorage.getItem(CALLER_STATE_KEY)
+    );
 
     const state =
       (byPack && byPack.packId === pId ? byPack : null) ||
@@ -197,7 +245,7 @@ export default function WinnersPage({
     const local = loadPackFromLocalStorage(pId);
     if (local) {
       setPack(local);
-      // preload assignments
+
       const next: Record<string, Assignment> = {};
       for (const c of local.cards || []) next[c.id] = loadAssignment(pId, c.id);
       setAssignments(next);
@@ -211,7 +259,8 @@ export default function WinnersPage({
         savePackToLocalStorage(pId, remote);
 
         const next: Record<string, Assignment> = {};
-        for (const c of remote.cards || []) next[c.id] = loadAssignment(pId, c.id);
+        for (const c of remote.cards || [])
+          next[c.id] = loadAssignment(pId, c.id);
         setAssignments(next);
       } else {
         setPack(null);
@@ -236,7 +285,6 @@ export default function WinnersPage({
   }, [pack, called]);
 
   const completedCount = useMemo(() => {
-    // "complete" means hits == 24 (for 5x5)
     return rows.filter((r) => r.hits >= 24).length;
   }, [rows]);
 
@@ -245,7 +293,6 @@ export default function WinnersPage({
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
-      // fallback: selectable textarea will still work
       return false;
     }
   }
@@ -262,9 +309,17 @@ export default function WinnersPage({
 
   function updateAssignment(cardId: string, patch: Partial<Assignment>) {
     setAssignments((prev) => {
-      const current = prev[cardId] || { assignedTo: "", sent: false, note: "", updatedAt: 0 };
+      const current = prev[cardId] || {
+        assignedTo: "",
+        sent: false,
+        note: "",
+        updatedAt: 0,
+      };
       const next: Assignment = {
-        assignedTo: typeof patch.assignedTo === "string" ? patch.assignedTo : current.assignedTo,
+        assignedTo:
+          typeof patch.assignedTo === "string"
+            ? patch.assignedTo
+            : current.assignedTo,
         sent: typeof patch.sent === "boolean" ? patch.sent : current.sent,
         note: typeof patch.note === "string" ? patch.note : current.note,
         updatedAt: Date.now(),
@@ -284,16 +339,33 @@ export default function WinnersPage({
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
       }}
     >
-      <div style={{ display: "flex", gap: 10, justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+        }}
+      >
         <div>
           <h1 style={{ marginTop: 0, marginBottom: 8 }}>Winners</h1>
           <div style={{ color: "#6b7280", fontSize: 13 }}>
-            PackId: <b>{packId}</b> | Caller state: <b>{callerState ? "Loaded" : "Not found"}</b> | Saved:{" "}
-            <b>{formatSavedAt(savedAt)}</b> | Called: <b>{called.length}</b> | Remaining: <b>{remaining.length}</b>
+            PackId: <b>{packId}</b> | Caller state:{" "}
+            <b>{callerState ? "Loaded" : "Not found"}</b> | Saved:{" "}
+            <b>{formatSavedAt(savedAt)}</b> | Called: <b>{called.length}</b> |
+            Remaining: <b>{remaining.length}</b>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+          }}
+        >
           <a
             href="/caller"
             style={{
@@ -325,13 +397,33 @@ export default function WinnersPage({
         </div>
       </div>
 
-      <div style={{ marginTop: 14, border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
-        <div style={{ fontSize: 26, fontWeight: 900, marginBottom: 4 }}>{title}</div>
-        <div style={{ fontSize: 18, color: "#6b7280" }}>Sponsor: {sponsorName}</div>
+      <div
+        style={{
+          marginTop: 14,
+          border: "1px solid #e5e7eb",
+          borderRadius: 14,
+          padding: 14,
+        }}
+      >
+        <div style={{ fontSize: 26, fontWeight: 900, marginBottom: 4 }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 18, color: "#6b7280" }}>
+          Sponsor: {sponsorName}
+        </div>
       </div>
 
-      <div style={{ marginTop: 12, border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
-        <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Completion summary</div>
+      <div
+        style={{
+          marginTop: 12,
+          border: "1px solid #e5e7eb",
+          borderRadius: 14,
+          padding: 14,
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>
+          Completion summary
+        </div>
         <div style={{ fontSize: 18 }}>
           Cards complete: <b>{completedCount}</b> / <b>{rows.length}</b>
         </div>
@@ -339,8 +431,17 @@ export default function WinnersPage({
 
       {/* Copy box */}
       {activeCopyUrl ? (
-        <div style={{ marginTop: 12, border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
-          <div style={{ fontWeight: 900, marginBottom: 8 }}>Digital card link (copy + send)</div>
+        <div
+          style={{
+            marginTop: 12,
+            border: "1px solid #e5e7eb",
+            borderRadius: 14,
+            padding: 14,
+          }}
+        >
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>
+            Digital card link (copy + send)
+          </div>
           <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>
             Card: <b>{activeCopyCardId}</b>
           </div>
@@ -353,7 +454,8 @@ export default function WinnersPage({
               borderRadius: 10,
               border: "1px solid #d1d5db",
               padding: 12,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
               fontSize: 14,
             }}
           />
@@ -371,6 +473,24 @@ export default function WinnersPage({
             >
               Copy link
             </button>
+
+            <a
+              href={activeCopyUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #111827",
+                background: "white",
+                textDecoration: "none",
+                color: "#111827",
+                display: "inline-block",
+              }}
+            >
+              Open
+            </a>
+
             <button
               onClick={() => {
                 setActiveCopyCardId("");
@@ -390,37 +510,114 @@ export default function WinnersPage({
         </div>
       ) : null}
 
-      <div style={{ marginTop: 12, border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
-        <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 10 }}>Should-have-won timeline</div>
+      {/* Download errors */}
+      {downloadError ? (
+        <div
+          style={{
+            marginTop: 12,
+            border: "1px solid #fecaca",
+            background: "#fff1f2",
+            borderRadius: 14,
+            padding: 14,
+            color: "#991b1b",
+          }}
+        >
+          <b>PDF download error:</b> {downloadError}
+        </div>
+      ) : null}
+
+      <div
+        style={{
+          marginTop: 12,
+          border: "1px solid #e5e7eb",
+          borderRadius: 14,
+          padding: 14,
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 10 }}>
+          Should-have-won timeline
+        </div>
 
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #e5e7eb" }}>Card ID</th>
-                <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #e5e7eb" }}>Expected completion</th>
-                <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #e5e7eb" }}>Digital link</th>
-                <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #e5e7eb" }}>Assignment</th>
-                <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #e5e7eb" }}>Single card PDF</th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 10,
+                    borderBottom: "1px solid #e5e7eb",
+                  }}
+                >
+                  Card ID
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 10,
+                    borderBottom: "1px solid #e5e7eb",
+                  }}
+                >
+                  Expected completion
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 10,
+                    borderBottom: "1px solid #e5e7eb",
+                  }}
+                >
+                  Digital link
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 10,
+                    borderBottom: "1px solid #e5e7eb",
+                  }}
+                >
+                  Assignment
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 10,
+                    borderBottom: "1px solid #e5e7eb",
+                  }}
+                >
+                  Single card PDF
+                </th>
               </tr>
             </thead>
 
             <tbody>
               {rows.map(({ card, hits }) => {
-                const a = assignments[card.id] || { assignedTo: "", sent: false, note: "", updatedAt: 0 };
-                const doneText = hits >= 24 ? "Complete (24/24)" : `Not complete yet (${hits}/24)`;
+                const a = assignments[card.id] || {
+                  assignedTo: "",
+                  sent: false,
+                  note: "",
+                  updatedAt: 0,
+                };
+                const doneText =
+                  hits >= 24 ? "Complete (24/24)" : `Not complete yet (${hits}/24)`;
 
-                // NOTE: your existing PDF download logic lives elsewhere.
-                // Keep your current handler/endpoint here — replace this placeholder if needed.
-                const pdfDownloadHref = `/api/card-pdf?packId=${encodeURIComponent(packId)}&cardId=${encodeURIComponent(card.id)}`;
+                const isDownloading = downloadingCardId === card.id;
 
                 return (
                   <tr key={card.id}>
-                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6", fontWeight: 800 }}>
+                    <td
+                      style={{
+                        padding: 10,
+                        borderBottom: "1px solid #f3f4f6",
+                        fontWeight: 800,
+                      }}
+                    >
                       {card.id}
                     </td>
 
-                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>{doneText}</td>
+                    <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>
+                      {doneText}
+                    </td>
 
                     <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>
                       <button
@@ -442,7 +639,9 @@ export default function WinnersPage({
                       <div style={{ display: "grid", gap: 8 }}>
                         <input
                           value={a.assignedTo}
-                          onChange={(e) => updateAssignment(card.id, { assignedTo: e.target.value })}
+                          onChange={(e) =>
+                            updateAssignment(card.id, { assignedTo: e.target.value })
+                          }
                           placeholder="Assigned to (name)"
                           style={{
                             width: 220,
@@ -453,11 +652,20 @@ export default function WinnersPage({
                           }}
                         />
 
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            fontSize: 14,
+                          }}
+                        >
                           <input
                             type="checkbox"
                             checked={a.sent}
-                            onChange={(e) => updateAssignment(card.id, { sent: e.target.checked })}
+                            onChange={(e) =>
+                              updateAssignment(card.id, { sent: e.target.checked })
+                            }
                           />
                           Sent
                         </label>
@@ -465,24 +673,31 @@ export default function WinnersPage({
                     </td>
 
                     <td style={{ padding: 10, borderBottom: "1px solid #f3f4f6" }}>
-                      {/* IMPORTANT:
-                          Replace this <a href> with your existing working download handler if needed.
-                          If your Winners page already uses a JS fetch -> blob download, keep that exact code instead.
-                      */}
-                      <a
-                        href={pdfDownloadHref}
+                      <button
+                        onClick={async () => {
+                          setDownloadError("");
+                          setDownloadingCardId(card.id);
+                          try {
+                            await downloadSingleCardPdf(packId, card.id);
+                          } catch (e: any) {
+                            setDownloadError(e?.message || "Download failed.");
+                          } finally {
+                            setDownloadingCardId("");
+                          }
+                        }}
+                        disabled={isDownloading}
                         style={{
                           padding: "10px 14px",
                           borderRadius: 10,
                           border: "1px solid #111827",
-                          background: "white",
-                          textDecoration: "none",
+                          background: isDownloading ? "#e5e7eb" : "white",
                           color: "#111827",
-                          display: "inline-block",
+                          cursor: isDownloading ? "not-allowed" : "pointer",
+                          minWidth: 140,
                         }}
                       >
-                        Download PDF
-                      </a>
+                        {isDownloading ? "Downloading…" : "Download PDF"}
+                      </button>
                     </td>
                   </tr>
                 );
