@@ -33,6 +33,14 @@ function loadPack(packId: string): CardsPack | null {
   }
 }
 
+function savePack(packId: string, pack: CardsPack) {
+  try {
+    window.localStorage.setItem(packStorageKey(packId), JSON.stringify(pack));
+  } catch {
+    // ignore
+  }
+}
+
 function loadMarks(packId: string, cardId: string): Record<string, boolean> {
   try {
     const raw = window.localStorage.getItem(marksStorageKey(packId, cardId));
@@ -43,18 +51,20 @@ function loadMarks(packId: string, cardId: string): Record<string, boolean> {
   }
 }
 
-function isCenter(r: number, c: number, size: number) {
-  const mid = Math.floor(size / 2);
-  return r === mid && c === mid;
-}
+async function fetchPackFromServer(packId: string): Promise<CardsPack | null> {
+  try {
+    const res = await fetch(`/api/packs/${encodeURIComponent(packId)}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
 
-function calcFontSize(label: string) {
-  const len = (label || "").trim().length;
-  if (len <= 12) return 15;
-  if (len <= 18) return 13.5;
-  if (len <= 26) return 12.2;
-  if (len <= 34) return 11.2;
-  return 10.4;
+    const json = await res.json();
+    if (!json?.ok || !json?.pack) return null;
+
+    return json.pack as CardsPack;
+  } catch {
+    return null;
+  }
 }
 
 export default function CardPage({
@@ -66,131 +76,300 @@ export default function CardPage({
 
   const [pack, setPack] = useState<CardsPack | null>(null);
   const [marks, setMarks] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState<boolean>(true);
 
+  // Load pack: localStorage first, then server fallback (Firestore via /api/packs/[packId])
   useEffect(() => {
-    const p = loadPack(packId);
-    setPack(p);
-    setMarks(loadMarks(packId, cardId));
+    let cancelled = false;
+
+    async function go() {
+      setLoading(true);
+
+      // 1) local fast path
+      const local = loadPack(packId);
+      if (local) {
+        if (cancelled) return;
+        setPack(local);
+        setMarks(loadMarks(packId, cardId));
+        setLoading(false);
+        return;
+      }
+
+      // 2) server fallback
+      const remote = await fetchPackFromServer(packId);
+      if (cancelled) return;
+
+      if (remote) {
+        savePack(packId, remote);
+        setPack(remote);
+        setMarks(loadMarks(packId, cardId));
+        setLoading(false);
+        return;
+      }
+
+      // not found anywhere
+      setPack(null);
+      setLoading(false);
+    }
+
+    go();
+    return () => {
+      cancelled = true;
+    };
   }, [packId, cardId]);
 
+  // Persist marks to this device
   useEffect(() => {
     try {
       window.localStorage.setItem(
         marksStorageKey(packId, cardId),
         JSON.stringify(marks)
       );
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, [packId, cardId, marks]);
 
   const card = useMemo(() => {
     return pack?.cards.find((c) => c.id === cardId) ?? null;
   }, [pack, cardId]);
 
-  function toggle(r: number, c: number, size: number) {
-    if (isCenter(r, c, size)) return;
+  function toggle(r: number, c: number) {
+    // Center is locked FREE
+    const size = card?.grid.length ?? 5;
+    const center = Math.floor(size / 2);
+    if (r === center && c === center) return;
+
     const key = `${r},${c}`;
     setMarks((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
-  if (!pack || !card) {
+  function clearMarks() {
+    setMarks({});
+  }
+
+  const title = pack?.title || "Harvest Heroes Bingo";
+  const sponsor = pack?.sponsorName || "";
+
+  if (loading) {
     return (
-      <div style={{ padding: 20, fontFamily: "system-ui" }}>
-        <h2>Harvest Heroes Bingo</h2>
-        <p>This card is not available on this device.</p>
+      <div
+        style={{
+          maxWidth: 900,
+          margin: "0 auto",
+          padding: 16,
+          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+        }}
+      >
+        <h1 style={{ marginTop: 0 }}>{title}</h1>
+        <div style={{ color: "#6b7280" }}>Loading card…</div>
+      </div>
+    );
+  }
+
+  if (!pack) {
+    return (
+      <div
+        style={{
+          maxWidth: 900,
+          margin: "0 auto",
+          padding: 16,
+          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+        }}
+      >
+        <h1 style={{ marginTop: 0 }}>{title}</h1>
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>
+            This card is not available on this device.
+          </div>
+          <div style={{ fontSize: 14 }}>
+            packId: <b>{packId}</b>
+          </div>
+          <div style={{ fontSize: 14 }}>
+            cardId: <b>{cardId}</b>
+          </div>
+          <div style={{ marginTop: 10, color: "#6b7280", fontSize: 13 }}>
+            If you are a contestant, ask the organizer to regenerate the pack or
+            resend your link. (Server storage is required for universal links.)
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!card) {
+    return (
+      <div
+        style={{
+          maxWidth: 900,
+          margin: "0 auto",
+          padding: 16,
+          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+        }}
+      >
+        <h1 style={{ marginTop: 0 }}>{title}</h1>
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>
+            Card not found in this pack.
+          </div>
+          <div style={{ fontSize: 14 }}>
+            packId: <b>{packId}</b>
+          </div>
+          <div style={{ fontSize: 14 }}>
+            cardId: <b>{cardId}</b>
+          </div>
+        </div>
       </div>
     );
   }
 
   const size = card.grid.length;
-  const sponsor = pack.sponsorName || "Joe’s Grows";
+  const center = Math.floor(size / 2);
 
   return (
     <div
       style={{
-        minHeight: "100vh",
-        background: "#ffffff",
-        padding: 14,
+        maxWidth: 900,
+        margin: "0 auto",
+        padding: 16,
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
       }}
     >
-      <div style={{ maxWidth: 920, margin: "0 auto" }}>
-        {/* Header mirrors PDF */}
-        <div style={{ textAlign: "center", marginBottom: 12 }}>
-          <div style={{ fontWeight: 900, fontSize: 18 }}>{sponsor}</div>
-          <div style={{ fontSize: 26, fontWeight: 950 }}>
-            Harvest Heroes Bingo
-          </div>
-          <div style={{ fontSize: 13, marginTop: 4 }}>
-            Card ID: <b>{cardId}</b>
-          </div>
+      {/* Minimal header like the PDF vibe */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 36, fontWeight: 900, marginBottom: 6 }}>
+          {title}
         </div>
 
-        {/* Grid */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${size}, 1fr)`,
-            gap: 10,
-          }}
-        >
-          {card.grid.map((row, r) =>
-            row.map((label, c) => {
-              const center = isCenter(r, c, size);
-              const marked = center || !!marks[`${r},${c}`];
+        {sponsor ? (
+          <div style={{ fontSize: 16, color: "#374151" }}>
+            Sponsor: <b>{sponsor}</b>
+          </div>
+        ) : null}
 
-              return (
-                <button
-                  key={`${r}-${c}`}
-                  onClick={() => toggle(r, c, size)}
-                  disabled={center}
+        <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
+          Card ID: <b>{cardId}</b>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <button
+            onClick={clearMarks}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid #111827",
+              background: "white",
+              cursor: "pointer",
+              fontWeight: 800,
+            }}
+          >
+            Clear marks
+          </button>
+        </div>
+      </div>
+
+      {/* Grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
+          gap: 10,
+        }}
+      >
+        {card.grid.map((row, r) =>
+          row.map((label, c) => {
+            const isCenter = r === center && c === center;
+            const isMarked = isCenter ? true : !!marks[`${r},${c}`];
+
+            return (
+              <button
+                key={`${r}-${c}`}
+                onClick={() => toggle(r, c)}
+                style={{
+                  position: "relative",
+                  minHeight: 86,
+                  padding: 10,
+                  borderRadius: 14,
+                  border: "1px solid #d1d5db",
+                  background: isCenter ? "#0f2d24" : "white",
+                  cursor: isCenter ? "default" : "pointer",
+                  textAlign: "center",
+                  lineHeight: 1.15,
+                  fontWeight: 900,
+                  overflow: "hidden",
+                }}
+              >
+                {/* label */}
+                <div
                   style={{
-                    minHeight: 84,
-                    padding: 10,
-                    borderRadius: 14,
-                    border: "2px solid #111827",
-                    background: "#ffffff",
-                    cursor: center ? "default" : "pointer",
-                    fontWeight: 900,
-                    fontSize: calcFontSize(label),
-                    position: "relative",
-                    userSelect: "none",
+                    fontSize: 14,
+                    color: isCenter ? "white" : "#111827",
+                    wordBreak: "break-word",
+                    overflowWrap: "anywhere",
+                    hyphens: "auto",
                   }}
                 >
-                  {label}
-                  {center && (
-                    <div style={{ fontSize: 12, marginTop: 6 }}>FREE</div>
+                  {isCenter ? (
+                    <>
+                      <div style={{ opacity: 0.9 }}>{label}</div>
+                      <div style={{ marginTop: 6, fontSize: 13, opacity: 0.9 }}>
+                        FREE
+                      </div>
+                    </>
+                  ) : (
+                    label
                   )}
-                  {marked && !center && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        right: 8,
-                        bottom: 6,
-                        fontSize: 28,
-                        color: "rgba(0,0,0,0.25)",
-                      }}
-                    >
-                      ✓
-                    </div>
-                  )}
-                </button>
-              );
-            })
-          )}
-        </div>
+                </div>
 
-        {/* Footer */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginTop: 10,
-            fontSize: 12,
-          }}
-        >
-          <div>Grower Bingo</div>
-          <div>Center is FREE</div>
-        </div>
+                {/* Mark overlay */}
+                {isMarked ? (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      borderRadius: 14,
+                      background: isCenter
+                        ? "rgba(0,0,0,0.10)"
+                        : "rgba(0,0,0,0.18)",
+                    }}
+                  />
+                ) : null}
+
+                {/* Big check */}
+                {isMarked ? (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 42,
+                      fontWeight: 900,
+                      color: isCenter ? "rgba(255,255,255,0.7)" : "rgba(17,24,39,0.6)",
+                    }}
+                  >
+                    ✓
+                  </div>
+                ) : null}
+              </button>
+            );
+          })
+        )}
       </div>
     </div>
   );
