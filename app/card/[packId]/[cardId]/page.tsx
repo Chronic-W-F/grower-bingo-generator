@@ -48,18 +48,13 @@ function isCenter(r: number, c: number, size: number) {
   return r === mid && c === mid;
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-
 function calcFontSize(label: string) {
   const len = (label || "").trim().length;
-  // tuned for mobile: keep readable but prevent overflow
-  if (len <= 10) return 15;
-  if (len <= 16) return 13.5;
-  if (len <= 22) return 12.5;
-  if (len <= 30) return 11.5;
-  return 10.5;
+  if (len <= 12) return 15;
+  if (len <= 18) return 13.5;
+  if (len <= 26) return 12.2;
+  if (len <= 34) return 11.2;
+  return 10.4;
 }
 
 export default function CardPage({
@@ -71,14 +66,6 @@ export default function CardPage({
 
   const [pack, setPack] = useState<CardsPack | null>(null);
   const [marks, setMarks] = useState<Record<string, boolean>>({});
-
-  const isAdmin = useMemo(() => {
-    try {
-      return new URLSearchParams(window.location.search).get("admin") === "1";
-    } catch {
-      return false;
-    }
-  }, []);
 
   useEffect(() => {
     const p = loadPack(packId);
@@ -92,9 +79,7 @@ export default function CardPage({
         marksStorageKey(packId, cardId),
         JSON.stringify(marks)
       );
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [packId, cardId, marks]);
 
   const card = useMemo(() => {
@@ -102,292 +87,109 @@ export default function CardPage({
   }, [pack, cardId]);
 
   function toggle(r: number, c: number, size: number) {
-    if (isCenter(r, c, size)) return; // FREE is locked
+    if (isCenter(r, c, size)) return;
     const key = `${r},${c}`;
     setMarks((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
-  function clearMarks() {
-    setMarks({});
-  }
-
   if (!pack || !card) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#0b0b10",
-          color: "white",
-          padding: 16,
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-        }}
-      >
-        <div style={{ maxWidth: 900, margin: "0 auto" }}>
-          <h1 style={{ marginTop: 0, marginBottom: 10 }}>Digital Bingo Card</h1>
-
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              border: "1px solid rgba(255,255,255,0.10)",
-              background: "rgba(255,255,255,0.04)",
-            }}
-          >
-            <div style={{ fontWeight: 900, marginBottom: 8 }}>
-              {!pack ? "Pack not found on this device" : "Card not found in this pack"}
-            </div>
-            <div>
-              packId: <b>{packId}</b>
-            </div>
-            <div>
-              cardId: <b>{cardId}</b>
-            </div>
-
-            {isAdmin ? (
-              <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <a
-                  href="/"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    color: "white",
-                    textDecoration: "none",
-                    background: "rgba(255,255,255,0.06)",
-                  }}
-                >
-                  Back to Generator
-                </a>
-                <a
-                  href="/caller"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    color: "white",
-                    textDecoration: "none",
-                    background: "rgba(255,255,255,0.06)",
-                  }}
-                >
-                  Caller
-                </a>
-              </div>
-            ) : (
-              <div style={{ marginTop: 10, color: "rgba(255,255,255,0.65)", fontSize: 13 }}>
-                If you’re the organizer, open this link with <b>?admin=1</b>.
-              </div>
-            )}
-          </div>
-        </div>
+      <div style={{ padding: 20, fontFamily: "system-ui" }}>
+        <h2>Harvest Heroes Bingo</h2>
+        <p>This card is not available on this device.</p>
       </div>
     );
   }
 
   const size = card.grid.length;
-
-  const title = (pack.title?.trim() || "Grower Bingo").trim();
-  const sponsor = (pack.sponsorName?.trim() || "").trim();
-
-  // Responsive cell sizing: keep square-ish, but don’t get tiny
-  const cellMinH = clamp(Math.floor(380 / size), 72, 98); // tuned for 5x5 on mobile
+  const sponsor = pack.sponsorName || "Joe’s Grows";
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "#0b0b10",
-        color: "white",
-        padding: 16,
+        background: "#ffffff",
+        padding: 14,
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
       }}
     >
-      <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      <div style={{ maxWidth: 920, margin: "0 auto" }}>
+        {/* Header mirrors PDF */}
+        <div style={{ textAlign: "center", marginBottom: 12 }}>
+          <div style={{ fontWeight: 900, fontSize: 18 }}>{sponsor}</div>
+          <div style={{ fontSize: 26, fontWeight: 950 }}>
+            Harvest Heroes Bingo
+          </div>
+          <div style={{ fontSize: 13, marginTop: 4 }}>
+            Card ID: <b>{cardId}</b>
+          </div>
+        </div>
+
+        {/* Grid */}
         <div
           style={{
-            borderRadius: 18,
-            border: "1px solid rgba(255,255,255,0.10)",
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
-            padding: 16,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+            display: "grid",
+            gridTemplateColumns: `repeat(${size}, 1fr)`,
+            gap: 10,
           }}
         >
-          {/* Header */}
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 260 }}>
-              <div style={{ fontSize: 28, fontWeight: 950, marginBottom: 6 }}>
-                {title}
-              </div>
+          {card.grid.map((row, r) =>
+            row.map((label, c) => {
+              const center = isCenter(r, c, size);
+              const marked = center || !!marks[`${r},${c}`];
 
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
-                {sponsor ? `${sponsor} • ` : ""}
-                Card: <b>{cardId}</b>
-              </div>
-
-              <div style={{ marginTop: 6, fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
-                Tap squares to mark. Center is <b>FREE</b>.
-              </div>
-            </div>
-
-            {/* Organizer-only controls */}
-            {isAdmin ? (
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <a
-                  href="/"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    color: "white",
-                    textDecoration: "none",
-                    background: "rgba(255,255,255,0.06)",
-                  }}
-                >
-                  Generator
-                </a>
-
-                <a
-                  href="/caller"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    color: "white",
-                    textDecoration: "none",
-                    background: "rgba(255,255,255,0.06)",
-                  }}
-                >
-                  Caller
-                </a>
-
-                <a
-                  href={`/winners/${encodeURIComponent(packId)}`}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    color: "white",
-                    textDecoration: "none",
-                    background: "rgba(255,255,255,0.06)",
-                  }}
-                >
-                  Winners
-                </a>
-
+              return (
                 <button
-                  onClick={clearMarks}
+                  key={`${r}-${c}`}
+                  onClick={() => toggle(r, c, size)}
+                  disabled={center}
                   style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.25)",
-                    background: "rgba(255,255,255,0.10)",
-                    color: "white",
-                    cursor: "pointer",
+                    minHeight: 84,
+                    padding: 10,
+                    borderRadius: 14,
+                    border: "2px solid #111827",
+                    background: "#ffffff",
+                    cursor: center ? "default" : "pointer",
                     fontWeight: 900,
+                    fontSize: calcFontSize(label),
+                    position: "relative",
+                    userSelect: "none",
                   }}
                 >
-                  Clear marks
-                </button>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Grid */}
-          <div
-            style={{
-              marginTop: 14,
-              display: "grid",
-              gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
-              gap: 10,
-            }}
-          >
-            {card.grid.map((row, r) =>
-              row.map((label, c) => {
-                const center = isCenter(r, c, size);
-                const marked = center || !!marks[`${r},${c}`];
-                const fontSize = calcFontSize(label);
-
-                return (
-                  <button
-                    key={`${r}-${c}`}
-                    onClick={() => toggle(r, c, size)}
-                    disabled={center}
-                    style={{
-                      position: "relative",
-                      minHeight: cellMinH,
-                      padding: 10,
-                      borderRadius: 16,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: marked
-                        ? "rgba(16, 185, 129, 0.14)"
-                        : "rgba(255,255,255,0.04)",
-                      cursor: center ? "default" : "pointer",
-                      textAlign: "center",
-                      lineHeight: 1.15,
-                      fontWeight: 900,
-                      boxShadow: marked
-                        ? "0 0 0 1px rgba(16,185,129,0.35) inset"
-                        : "none",
-                      userSelect: "none",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {/* label */}
+                  {label}
+                  {center && (
+                    <div style={{ fontSize: 12, marginTop: 6 }}>FREE</div>
+                  )}
+                  {marked && !center && (
                     <div
                       style={{
-                        fontSize,
-                        padding: "0 2px",
-                        color: "rgba(255,255,255,0.92)",
-                        textWrap: "balance" as any,
-                        wordBreak: "break-word",
-                        overflowWrap: "anywhere",
+                        position: "absolute",
+                        right: 8,
+                        bottom: 6,
+                        fontSize: 28,
+                        color: "rgba(0,0,0,0.25)",
                       }}
                     >
-                      {label}
+                      ✓
                     </div>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
 
-                    {/* center FREE */}
-                    {center ? (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          fontSize: 11,
-                          color: "rgba(167, 243, 208, 0.95)",
-                          fontWeight: 950,
-                        }}
-                      >
-                        FREE
-                      </div>
-                    ) : null}
-
-                    {/* subtle mark overlay (doesn't kill readability) */}
-                    {marked && !center ? (
-                      <div
-                        aria-hidden
-                        style={{
-                          position: "absolute",
-                          right: 8,
-                          bottom: 6,
-                          fontSize: 26,
-                          fontWeight: 1000,
-                          color: "rgba(167, 243, 208, 0.60)",
-                          textShadow: "0 4px 14px rgba(0,0,0,0.55)",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        ✓
-                      </div>
-                    ) : null}
-                  </button>
-                );
-              })
-            )}
-          </div>
-
-          {/* Footnote */}
-          <div style={{ marginTop: 12, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
-            Tip: If you’re the organizer, add <b>?admin=1</b> to show navigation and tools.
-          </div>
+        {/* Footer */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: 10,
+            fontSize: 12,
+          }}
+        >
+          <div>Grower Bingo</div>
+          <div>Center is FREE</div>
         </div>
       </div>
     </div>
