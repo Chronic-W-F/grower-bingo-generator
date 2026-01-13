@@ -30,7 +30,11 @@ function packStorageKey(packId: string) {
 }
 
 function loadPackFromLocalStorage(packId: string): CardsPack | null {
-  return safeJsonParse<CardsPack>(window.localStorage.getItem(packStorageKey(packId)));
+  try {
+    return safeJsonParse<CardsPack>(window.localStorage.getItem(packStorageKey(packId)));
+  } catch {
+    return null;
+  }
 }
 
 function savePackToLocalStorage(packId: string, pack: CardsPack) {
@@ -59,7 +63,8 @@ function marksKey(packId: string, cardId: string) {
 function loadMarks(packId: string, cardId: string): Record<string, boolean> {
   try {
     const raw = window.localStorage.getItem(marksKey(packId, cardId));
-    return raw ? JSON.parse(raw) : {};
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }
@@ -75,18 +80,40 @@ function cellKey(r: number, c: number) {
   return `${r}_${c}`;
 }
 
+function makeEmptyGrid(n = 5) {
+  return Array.from({ length: n }, () => Array.from({ length: n }, () => ""));
+}
+
+// Ensures we ALWAYS have a safe NxN string grid
+function coerceGrid(input: unknown, n = 5): string[][] {
+  if (!Array.isArray(input)) return makeEmptyGrid(n);
+
+  const rows = input.slice(0, n).map((row) => {
+    if (!Array.isArray(row)) return Array.from({ length: n }, () => "");
+    return row.slice(0, n).map((cell) => (typeof cell === "string" ? cell : ""));
+  });
+
+  while (rows.length < n) rows.push(Array.from({ length: n }, () => ""));
+  for (let i = 0; i < rows.length; i++) {
+    while (rows[i].length < n) rows[i].push("");
+  }
+
+  return rows;
+}
+
 export default function CardPage({
   params,
 }: {
   params: { packId: string; cardId: string };
 }) {
-  const packId = params.packId;
-  const cardId = params.cardId;
+  const packId = String(params?.packId || "").trim();
+  const cardId = String(params?.cardId || "").trim();
 
   const [pack, setPack] = useState<CardsPack | null>(null);
   const [card, setCard] = useState<BingoCard | null>(null);
   const [marks, setMarks] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!packId || !cardId) return;
@@ -97,18 +124,50 @@ export default function CardPage({
     let cancelled = false;
 
     async function load() {
-      const local = loadPackFromLocalStorage(packId);
-      if (local && !cancelled) {
-        setPack(local);
-        setCard(local.cards.find((c) => c.id === cardId) || null);
+      setLoading(true);
+      setError("");
+
+      if (!packId || !cardId) {
+        setError("Missing packId or cardId.");
+        setLoading(false);
+        return;
       }
 
+      // Try local first
+      const local = loadPackFromLocalStorage(packId);
+      if (local && Array.isArray(local.cards)) {
+        const foundLocal = local.cards.find((c) => c?.id === cardId) || null;
+        if (!cancelled) {
+          setPack(local);
+          setCard(foundLocal);
+        }
+      }
+
+      // Then remote
       const remote = await fetchPackFromApi(packId);
-      if (!remote || cancelled) return;
+      if (cancelled) return;
+
+      if (!remote || !Array.isArray(remote.cards)) {
+        setError("Could not load this pack.");
+        setPack(null);
+        setCard(null);
+        setLoading(false);
+        return;
+      }
 
       savePackToLocalStorage(packId, remote);
+
+      const foundRemote = remote.cards.find((c) => c?.id === cardId) || null;
+      if (!foundRemote) {
+        setPack(remote);
+        setCard(null);
+        setError("Card not found in this pack.");
+        setLoading(false);
+        return;
+      }
+
       setPack(remote);
-      setCard(remote.cards.find((c) => c.id === cardId) || null);
+      setCard(foundRemote);
       setLoading(false);
     }
 
@@ -118,9 +177,16 @@ export default function CardPage({
     };
   }, [packId, cardId]);
 
-  // 🚨 HARD GUARD — prevents crashes
-  if (loading || !pack || !card) {
+  if (loading) {
     return <div style={{ padding: 20 }}>Loading card…</div>;
+  }
+
+  if (error) {
+    return <div style={{ padding: 20 }}>{error}</div>;
+  }
+
+  if (!pack || !card) {
+    return <div style={{ padding: 20 }}>Error loading card.</div>;
   }
 
   const title = pack.title || "Harvest Heroes Bingo";
@@ -128,9 +194,10 @@ export default function CardPage({
   const bannerUrl = pack.bannerImageUrl || "/banners/current.png";
   const bgUrl = "/banners/bud-light.png";
 
-  const size = card.grid.length;
-  const center = Math.floor(size / 2);
-  const grid = useMemo(() => card.grid, [card]);
+  // ✅ Always safe 5x5 grid (prevents crashes forever)
+  const grid = useMemo(() => coerceGrid((card as any)?.grid, 5), [card]);
+  const size = 5;
+  const center = 2;
 
   function toggleMark(r: number, c: number) {
     if (r === center && c === center) return;
@@ -167,7 +234,7 @@ export default function CardPage({
         <div
           style={{
             background: "#fff",
-            padding: 2,
+            padding: 1, // ✅ smaller white box (barely outside)
             borderRadius: 12,
             boxShadow: "0 12px 34px rgba(0,0,0,0.28)",
           }}
@@ -178,13 +245,13 @@ export default function CardPage({
             style={{
               display: "block",
               height: 120,
-              borderRadius: 10,
+              borderRadius: 11,
             }}
           />
         </div>
       </div>
 
-      <h1 style={{ color: "#fff" }}>{title}</h1>
+      <h1 style={{ color: "#fff", margin: "0 0 6px 0" }}>{title}</h1>
       <div style={{ color: "#fff" }}>Sponsor: {sponsorName}</div>
       <div style={{ color: "#fff", marginBottom: 10 }}>
         Card ID: <b>{card.id}</b>
@@ -222,9 +289,7 @@ export default function CardPage({
               style={{
                 aspectRatio: "1 / 1",
                 borderRadius: 16,
-                background: isMarked(r, c)
-                  ? "#065f46"
-                  : "rgba(0,0,0,0.72)",
+                background: isMarked(r, c) ? "#065f46" : "rgba(0,0,0,0.72)",
                 color: "#fff",
                 fontWeight: 700,
                 border: isMarked(r, c)
