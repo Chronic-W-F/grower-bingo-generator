@@ -293,7 +293,6 @@ export default function CardPage({
     </div>
   );
 }
-};
 
 type CardsPack = {
   packId: string;
