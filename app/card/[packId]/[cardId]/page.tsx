@@ -13,7 +13,6 @@ type CardsPack = {
   title?: string;
   sponsorName?: string;
   bannerImageUrl?: string;
-  sponsorLogoUrl?: string;
   cards: BingoCard[];
 };
 
@@ -104,45 +103,18 @@ export default function CardPage({
       setLoading(true);
       setError("");
 
-      if (!packId || !cardId) {
-        setError("Missing packId or cardId.");
-        setLoading(false);
-        return;
-      }
-
       const local = loadPackFromLocalStorage(packId);
-      if (local) {
-        const found = local.cards.find((c) => c.id === cardId) || null;
-        if (!cancelled) {
-          setPack(local);
-          setCard(found);
-        }
+      if (local && !cancelled) {
+        setPack(local);
+        setCard(local.cards.find((c) => c.id === cardId) || null);
       }
 
       const remote = await fetchPackFromApi(packId);
-      if (cancelled) return;
-
-      if (!remote) {
-        setError("Could not load this pack.");
-        setPack(null);
-        setCard(null);
-        setLoading(false);
-        return;
-      }
+      if (cancelled || !remote) return;
 
       savePackToLocalStorage(packId, remote);
-
-      const found = remote.cards.find((c) => c.id === cardId) || null;
-      if (!found) {
-        setError("Card not found in this pack.");
-        setPack(remote);
-        setCard(null);
-        setLoading(false);
-        return;
-      }
-
       setPack(remote);
-      setCard(found);
+      setCard(remote.cards.find((c) => c.id === cardId) || null);
       setLoading(false);
     }
 
@@ -152,19 +124,18 @@ export default function CardPage({
     };
   }, [packId, cardId]);
 
-  const title = pack?.title || "Harvest Heroes Bingo";
-  const sponsorName = pack?.sponsorName || "Joe’s Grows";
-  const bannerUrl = pack?.bannerImageUrl || "/banners/current.png";
+  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
+  if (error || !pack || !card) return <div style={{ padding: 16 }}>Error loading card.</div>;
 
-  // Background image you uploaded
+  const title = pack.title || "Harvest Heroes Bingo";
+  const sponsorName = pack.sponsorName || "Joe’s Grows";
+  const bannerUrl = pack.bannerImageUrl || "/banners/current.png";
   const bgUrl = "/banners/bud-light.png";
 
-  const size = card?.grid?.length || 5;
+  const size = card.grid.length;
   const center = Math.floor(size / 2);
 
-  const grid = useMemo(() => {
-    return card?.grid || Array.from({ length: 5 }, () => Array(5).fill(""));
-  }, [card]);
+  const grid = useMemo(() => card.grid, [card]);
 
   function toggleMark(r: number, c: number) {
     if (r === center && c === center) return;
@@ -176,18 +147,15 @@ export default function CardPage({
     });
   }
 
-  function clearMarks() {
-    setMarks({});
-    saveMarks(packId, cardId, {});
-  }
-
   function isMarked(r: number, c: number) {
     if (r === center && c === center) return true;
     return !!marks[cellKey(r, c)];
   }
 
-  if (loading) return <div style={{ padding: 16 }}>Loading card…</div>;
-  if (error || !pack || !card) return <div style={{ padding: 16 }}>{error || "Error loading card."}</div>;
+  function clearMarks() {
+    setMarks({});
+    saveMarks(packId, cardId, {});
+  }
 
   return (
     <div
@@ -196,128 +164,91 @@ export default function CardPage({
         backgroundImage: `url(${bgUrl})`,
         backgroundSize: "cover",
         backgroundPosition: "center",
-        backgroundAttachment: "fixed",
-        padding: 12,
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+        padding: 14,
       }}
     >
-      <div style={{ maxWidth: 820, margin: "0 auto" }}>
-        {/* Banner: NO translucent container, just a tight white frame */}
+      {/* Banner */}
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
         <div
           style={{
-            display: "flex",
-            justifyContent: "center",
-            marginTop: 6,
+            background: "#fff",
+            padding: 2,              // 👈 barely outside the banner
+            borderRadius: 12,
+            boxShadow: "0 12px 34px rgba(0,0,0,0.28)",
           }}
         >
-          <div
+          <img
+            src={bannerUrl}
+            alt="Joe’s Grows"
             style={{
-              background: "#fff",
-              padding: 8, // tight “mat”
-              borderRadius: 18,
-              boxShadow: "0 14px 40px rgba(0,0,0,0.28)",
+              display: "block",
+              height: 120,
+              maxWidth: "100%",
+              objectFit: "contain",
+              borderRadius: 10,
             }}
-          >
-            <img
-              src={bannerUrl}
-              alt="Weekly banner"
-              style={{
-                display: "block",
-                width: "min(640px, 92vw)",
-                height: "auto",
-                borderRadius: 12,
-              }}
-            />
-          </div>
+          />
         </div>
+      </div>
 
-        {/* Title text directly on background (no translucent panel) */}
-        <div style={{ marginTop: 14 }}>
-          <div
-            style={{
-              color: "white",
-              textShadow: "0 4px 14px rgba(0,0,0,0.85)",
-            }}
-          >
-            <h1 style={{ margin: "0 0 6px 0", fontSize: 44, lineHeight: 1.05 }}>
-              {title}
-            </h1>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
-              Sponsor: {sponsorName}
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
-              Card ID: <span style={{ fontWeight: 900 }}>{card.id}</span>
-            </div>
-          </div>
+      {/* Title */}
+      <h1 style={{ color: "#fff", marginBottom: 4 }}>{title}</h1>
+      <div style={{ color: "#fff" }}>Sponsor: {sponsorName}</div>
+      <div style={{ color: "#fff", marginBottom: 8 }}>
+        Card ID: <b>{card.id}</b>
+      </div>
 
-          {/* Clear button, simple */}
-          <button
-            onClick={clearMarks}
-            style={{
-              marginTop: 12,
-              padding: "10px 14px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.55)",
-              background: "rgba(0,0,0,0.55)",
-              color: "white",
-              fontWeight: 800,
-              textShadow: "0 2px 10px rgba(0,0,0,0.8)",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
-              cursor: "pointer",
-            }}
-          >
-            Clear marks
-          </button>
-        </div>
+      <button
+        onClick={clearMarks}
+        style={{
+          marginBottom: 12,
+          padding: "8px 12px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,0.4)",
+          background: "rgba(0,0,0,0.45)",
+          color: "#fff",
+          fontWeight: 700,
+        }}
+      >
+        Clear marks
+      </button>
 
-        {/* Grid: plain black squares over background */}
-        <div style={{ marginTop: 16 }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
-              gap: 10,
-              width: "100%",
-              maxWidth: 760,
-              margin: "0 auto",
-            }}
-          >
-            {grid.map((row, r) =>
-              row.map((label, c) => {
-                const marked = isMarked(r, c);
-                const isCenter = r === center && c === center;
+      {/* Bingo Grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${size}, 1fr)`,
+          gap: 8,
+          maxWidth: 680,
+          margin: "0 auto",
+        }}
+      >
+        {grid.map((row, r) =>
+          row.map((label, c) => {
+            const marked = isMarked(r, c);
+            const isCenter = r === center && c === center;
 
-                return (
-                  <button
-                    key={`${r}-${c}`}
-                    onClick={() => toggleMark(r, c)}
-                    style={{
-                      aspectRatio: "1 / 1",
-                      borderRadius: 18,
-                      border: marked ? "2px solid #10b981" : "1px solid rgba(255,255,255,0.18)",
-                      background: marked ? "#065f46" : "rgba(0,0,0,0.82)",
-                      color: "white",
-                      fontWeight: 850,
-                      padding: 10,
-                      lineHeight: 1.12,
-                      textAlign: "center",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      wordBreak: "break-word",
-                      boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {label}
-                    {isCenter && <div style={{ fontSize: 12, marginTop: 6, opacity: 0.95 }}>FREE</div>}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
+            return (
+              <button
+                key={`${r}-${c}`}
+                onClick={() => toggleMark(r, c)}
+                style={{
+                  aspectRatio: "1 / 1",
+                  borderRadius: 16,
+                  border: marked ? "2px solid #10b981" : "1px solid rgba(255,255,255,0.25)",
+                  background: marked ? "#065f46" : "rgba(0,0,0,0.72)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  padding: 8,
+                  lineHeight: 1.15,
+                }}
+              >
+                {label}
+                {isCenter && <div style={{ fontSize: 12, marginTop: 6 }}>FREE</div>}
+              </button>
+            );
+          })
+        )}
       </div>
     </div>
   );
