@@ -59,9 +59,7 @@ function marksKey(packId: string, cardId: string) {
 function loadMarks(packId: string, cardId: string): Record<string, boolean> {
   try {
     const raw = window.localStorage.getItem(marksKey(packId, cardId));
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, boolean>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
@@ -82,14 +80,13 @@ export default function CardPage({
 }: {
   params: { packId: string; cardId: string };
 }) {
-  const packId = String(params.packId || "").trim();
-  const cardId = String(params.cardId || "").trim();
+  const packId = params.packId;
+  const cardId = params.cardId;
 
   const [pack, setPack] = useState<CardsPack | null>(null);
   const [card, setCard] = useState<BingoCard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [marks, setMarks] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!packId || !cardId) return;
@@ -99,10 +96,7 @@ export default function CardPage({
   useEffect(() => {
     let cancelled = false;
 
-    async function run() {
-      setLoading(true);
-      setError("");
-
+    async function load() {
       const local = loadPackFromLocalStorage(packId);
       if (local && !cancelled) {
         setPack(local);
@@ -110,7 +104,7 @@ export default function CardPage({
       }
 
       const remote = await fetchPackFromApi(packId);
-      if (cancelled || !remote) return;
+      if (!remote || cancelled) return;
 
       savePackToLocalStorage(packId, remote);
       setPack(remote);
@@ -118,14 +112,16 @@ export default function CardPage({
       setLoading(false);
     }
 
-    run();
+    load();
     return () => {
       cancelled = true;
     };
   }, [packId, cardId]);
 
-  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
-  if (error || !pack || !card) return <div style={{ padding: 16 }}>Error loading card.</div>;
+  // 🚨 HARD GUARD — prevents crashes
+  if (loading || !pack || !card) {
+    return <div style={{ padding: 20 }}>Loading card…</div>;
+  }
 
   const title = pack.title || "Harvest Heroes Bingo";
   const sponsorName = pack.sponsorName || "Joe’s Grows";
@@ -134,7 +130,6 @@ export default function CardPage({
 
   const size = card.grid.length;
   const center = Math.floor(size / 2);
-
   const grid = useMemo(() => card.grid, [card]);
 
   function toggleMark(r: number, c: number) {
@@ -168,11 +163,11 @@ export default function CardPage({
       }}
     >
       {/* Banner */}
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
         <div
           style={{
             background: "#fff",
-            padding: 2,              // 👈 barely outside the banner
+            padding: 2,
             borderRadius: 12,
             boxShadow: "0 12px 34px rgba(0,0,0,0.28)",
           }}
@@ -183,37 +178,33 @@ export default function CardPage({
             style={{
               display: "block",
               height: 120,
-              maxWidth: "100%",
-              objectFit: "contain",
               borderRadius: 10,
             }}
           />
         </div>
       </div>
 
-      {/* Title */}
-      <h1 style={{ color: "#fff", marginBottom: 4 }}>{title}</h1>
+      <h1 style={{ color: "#fff" }}>{title}</h1>
       <div style={{ color: "#fff" }}>Sponsor: {sponsorName}</div>
-      <div style={{ color: "#fff", marginBottom: 8 }}>
+      <div style={{ color: "#fff", marginBottom: 10 }}>
         Card ID: <b>{card.id}</b>
       </div>
 
       <button
         onClick={clearMarks}
         style={{
-          marginBottom: 12,
+          marginBottom: 14,
           padding: "8px 12px",
           borderRadius: 10,
-          border: "1px solid rgba(255,255,255,0.4)",
           background: "rgba(0,0,0,0.45)",
           color: "#fff",
           fontWeight: 700,
+          border: "1px solid rgba(255,255,255,0.35)",
         }}
       >
         Clear marks
       </button>
 
-      {/* Bingo Grid */}
       <div
         style={{
           display: "grid",
@@ -224,30 +215,29 @@ export default function CardPage({
         }}
       >
         {grid.map((row, r) =>
-          row.map((label, c) => {
-            const marked = isMarked(r, c);
-            const isCenter = r === center && c === center;
-
-            return (
-              <button
-                key={`${r}-${c}`}
-                onClick={() => toggleMark(r, c)}
-                style={{
-                  aspectRatio: "1 / 1",
-                  borderRadius: 16,
-                  border: marked ? "2px solid #10b981" : "1px solid rgba(255,255,255,0.25)",
-                  background: marked ? "#065f46" : "rgba(0,0,0,0.72)",
-                  color: "#fff",
-                  fontWeight: 700,
-                  padding: 8,
-                  lineHeight: 1.15,
-                }}
-              >
-                {label}
-                {isCenter && <div style={{ fontSize: 12, marginTop: 6 }}>FREE</div>}
-              </button>
-            );
-          })
+          row.map((label, c) => (
+            <button
+              key={`${r}-${c}`}
+              onClick={() => toggleMark(r, c)}
+              style={{
+                aspectRatio: "1 / 1",
+                borderRadius: 16,
+                background: isMarked(r, c)
+                  ? "#065f46"
+                  : "rgba(0,0,0,0.72)",
+                color: "#fff",
+                fontWeight: 700,
+                border: isMarked(r, c)
+                  ? "2px solid #10b981"
+                  : "1px solid rgba(255,255,255,0.25)",
+              }}
+            >
+              {label}
+              {r === center && c === center && (
+                <div style={{ fontSize: 12, marginTop: 6 }}>FREE</div>
+              )}
+            </button>
+          ))
         )}
       </div>
     </div>
