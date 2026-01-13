@@ -80,6 +80,11 @@ function cellKey(r: number, c: number) {
   return `${r}_${c}`;
 }
 
+// For debug label display only (matches iconMap normalization style)
+function normalizeLabelForDebug(label: string) {
+  return (label || "").trim().replace(/\s+/g, " ");
+}
+
 export default function CardPage({
   params,
 }: {
@@ -158,7 +163,7 @@ export default function CardPage({
   const sponsorName = pack?.sponsorName || "Joe’s Grows";
   const bannerUrl = pack?.bannerImageUrl || "/banners/current.png";
 
-  // Background image
+  // Background image (put this file in: /public/banners/bud-light.png)
   const bgUrl = "/banners/bud-light.png";
 
   const size = card?.grid?.length || 5;
@@ -216,6 +221,7 @@ export default function CardPage({
               borderRadius: 18,
               position: "relative",
               boxShadow: "0 12px 34px rgba(0,0,0,0.28)",
+              background: "rgba(0,0,0,0.18)",
             }}
           >
             <img
@@ -226,7 +232,7 @@ export default function CardPage({
                 inset: 0,
                 width: "100%",
                 height: "100%",
-                objectFit: "cover",
+                objectFit: "contain", // shows full banner, no crop
                 objectPosition: "center",
                 display: "block",
               }}
@@ -287,7 +293,8 @@ export default function CardPage({
                 const marked = isMarked(r, c);
                 const isCenter = r === center && c === center;
 
-                const iconSrc = getIconForLabel(label);
+                // ✅ Use the helper (handles weird spacing + case)
+                const iconSrc = !isCenter ? getIconForLabel(label) : undefined;
 
                 return (
                   <button
@@ -296,7 +303,9 @@ export default function CardPage({
                     style={{
                       aspectRatio: "1 / 1",
                       borderRadius: 18,
-                      border: marked ? "2px solid #10b981" : "1px solid rgba(255,255,255,0.18)",
+                      border: marked
+                        ? "2px solid #10b981"
+                        : "1px solid rgba(255,255,255,0.18)",
                       background: marked ? "#065f46" : "rgba(0,0,0,0.82)",
                       color: "white",
                       fontWeight: 850,
@@ -315,7 +324,7 @@ export default function CardPage({
                     }}
                   >
                     {/* ICON watermark layer */}
-                    {iconSrc && !isCenter && (
+                    {iconSrc && (
                       <img
                         src={iconSrc}
                         alt=""
@@ -360,6 +369,23 @@ export default function CardPage({
                           FREE
                         </div>
                       )}
+                    </div>
+
+                    {/* TEMP DEBUG (remove later): shows normalized label + icon status */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        bottom: 6,
+                        left: 8,
+                        right: 8,
+                        fontSize: 10,
+                        opacity: 0.75,
+                        zIndex: 2,
+                        pointerEvents: "none",
+                        textShadow: "0 2px 8px rgba(0,0,0,0.9)",
+                      }}
+                    >
+                      {normalizeLabelForDebug(label)} | {iconSrc ? "ICON ✅" : "NO ICON ❌"}
                     </div>
                   </button>
                 );
