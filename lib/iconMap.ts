@@ -1,9 +1,6 @@
 // lib/iconMap.ts
-// Keys MUST exactly match the bingo square text (case, spaces, punctuation).
-// Values are paths under /public (so "/bingo-icons/xyz.png").
-//
-// Folder: /public/bingo-icons/
-// Example file: /public/bingo-icons/trellis-net.png
+// Icons live in /public/bingo-icons/*
+// Use: getIconForLabel(label) to safely resolve paths even if label has weird spacing/case.
 
 export const ICON_MAP: Record<string, string> = {
   "Trellis net": "/bingo-icons/trellis-net.png",
@@ -12,7 +9,7 @@ export const ICON_MAP: Record<string, string> = {
   "Stretch week": "/bingo-icons/stretch-week.png",
   "Dryback": "/bingo-icons/dryback.png",
   "Runoff EC": "/bingo-icons/runoff-ec.png",
-  "VPD off": "/bingo-icons/vpd-off.png", // good as stylized text icon
+  "VPD off": "/bingo-icons/vpd-off.png",
   "Heat stress": "/bingo-icons/heat-stress.png",
   "Light burn": "/bingo-icons/light-burn.png",
   "Herm watch": "/bingo-icons/herm-watch.png",
@@ -20,15 +17,15 @@ export const ICON_MAP: Record<string, string> = {
   "Amber trichomes": "/bingo-icons/amber-trichomes.png",
   "Cloudy trichomes": "/bingo-icons/cloudy-trichomes.png",
   "Clear trichomes": "/bingo-icons/clear-trichomes.png",
-  "Flush debate": "/bingo-icons/flush-debate.png", // can be stylized text icon
+  "Flush debate": "/bingo-icons/flush-debate.png",
   "Fire genetics": "/bingo-icons/fire-genetics.png",
   "Stunted growth": "/bingo-icons/stunted-growth.png",
   "Cal-Mag": "/bingo-icons/cal-mag.png",
-  "pH swing": "/bingo-icons/ph-swing.png", // your idea: pH on a swing icon
-  "pH up": "/bingo-icons/ph-up.png", // pH + up arrow
-  "pH down": "/bingo-icons/ph-down.png", // pH + down arrow
-  "EC up": "/bingo-icons/ec-up.png", // EC + up arrow
-  "EC down": "/bingo-icons/ec-down.png", // EC + down arrow
+  "pH swing": "/bingo-icons/ph-swing.png",
+  "pH up": "/bingo-icons/ph-up.png",
+  "pH down": "/bingo-icons/ph-down.png",
+  "EC up": "/bingo-icons/ec-up.png",
+  "EC down": "/bingo-icons/ec-down.png",
   "Overwatered": "/bingo-icons/overwatered.png",
   "Underwatered": "/bingo-icons/underwatered.png",
   "Powdery mildew": "/bingo-icons/powdery-mildew.png",
@@ -129,3 +126,34 @@ export const ICON_MAP: Record<string, string> = {
   "Predator mites": "/bingo-icons/predator-mites.png",
   "Ladybugs released": "/bingo-icons/ladybugs-released.png",
 };
+
+function normalizeKey(label: string) {
+  return (label || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[’]/g, "'"); // smart apostrophe -> normal apostrophe
+}
+
+let _lowerIndex: Record<string, string> | null = null;
+
+function getLowerIndex() {
+  if (_lowerIndex) return _lowerIndex;
+  const idx: Record<string, string> = {};
+  for (const k of Object.keys(ICON_MAP)) {
+    idx[normalizeKey(k).toLowerCase()] = k;
+  }
+  _lowerIndex = idx;
+  return idx;
+}
+
+export function getIconForLabel(label: string): string | undefined {
+  const norm = normalizeKey(label);
+
+  // exact match first
+  if (ICON_MAP[norm]) return ICON_MAP[norm];
+
+  // case-insensitive fallback (handles "Foxtails" vs "foxtails")
+  const idx = getLowerIndex();
+  const originalKey = idx[norm.toLowerCase()];
+  return originalKey ? ICON_MAP[originalKey] : undefined;
+}
