@@ -13,7 +13,6 @@ type CardsPack = {
   title?: string;
   sponsorName?: string;
   bannerImageUrl?: string;
-  sponsorLogoUrl?: string;
   cards: BingoCard[];
 };
 
@@ -31,7 +30,9 @@ function packStorageKey(packId: string) {
 }
 
 function loadPackFromLocalStorage(packId: string): CardsPack | null {
-  return safeJsonParse<CardsPack>(window.localStorage.getItem(packStorageKey(packId)));
+  return safeJsonParse<CardsPack>(
+    window.localStorage.getItem(packStorageKey(packId))
+  );
 }
 
 function savePackToLocalStorage(packId: string, pack: CardsPack) {
@@ -68,7 +69,11 @@ function loadMarks(packId: string, cardId: string): Record<string, boolean> {
   }
 }
 
-function saveMarks(packId: string, cardId: string, marks: Record<string, boolean>) {
+function saveMarks(
+  packId: string,
+  cardId: string,
+  marks: Record<string, boolean>
+) {
   try {
     window.localStorage.setItem(marksKey(packId, cardId), JSON.stringify(marks));
   } catch {}
@@ -156,7 +161,7 @@ export default function CardPage({
   const sponsorName = pack?.sponsorName || "Joe’s Grows";
   const bannerUrl = pack?.bannerImageUrl || "/banners/current.png";
 
-  // Background image you uploaded
+  // Background image
   const bgUrl = "/banners/bud-light.png";
 
   const size = card?.grid?.length || 5;
@@ -171,154 +176,3 @@ export default function CardPage({
     const k = cellKey(r, c);
     setMarks((prev) => {
       const next = { ...prev, [k]: !prev[k] };
-      saveMarks(packId, cardId, next);
-      return next;
-    });
-  }
-
-  function clearMarks() {
-    setMarks({});
-    saveMarks(packId, cardId, {});
-  }
-
-  function isMarked(r: number, c: number) {
-    if (r === center && c === center) return true;
-    return !!marks[cellKey(r, c)];
-  }
-
-  if (loading) return <div style={{ padding: 16 }}>Loading card…</div>;
-  if (error || !pack || !card) return <div style={{ padding: 16 }}>{error || "Error loading card."}</div>;
-
-  return (
-    <div
-      style={{
-        minHeight: "100dvh",
-        backgroundImage: `url(${bgUrl})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundAttachment: "fixed",
-        padding: 12,
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-      }}
-    >
-      <div style={{ maxWidth: 820, margin: "0 auto" }}>
-        {/* Banner: NO translucent container, just a tight white frame */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            marginTop: 6,
-          }}
-        >
-          <div
-            style={{
-              background: "#fff",
-              padding: 8, // tight “mat”
-              borderRadius: 18,
-              boxShadow: "0 14px 40px rgba(0,0,0,0.28)",
-            }}
-          >
-            <img
-              src={bannerUrl}
-              alt="Weekly banner"
-              style={{
-                display: "block",
-                width: "min(640px, 92vw)",
-                height: "auto",
-                borderRadius: 12,
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Title text directly on background (no translucent panel) */}
-        <div style={{ marginTop: 14 }}>
-          <div
-            style={{
-              color: "white",
-              textShadow: "0 4px 14px rgba(0,0,0,0.85)",
-            }}
-          >
-            <h1 style={{ margin: "0 0 6px 0", fontSize: 44, lineHeight: 1.05 }}>
-              {title}
-            </h1>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
-              Sponsor: {sponsorName}
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
-              Card ID: <span style={{ fontWeight: 900 }}>{card.id}</span>
-            </div>
-          </div>
-
-          {/* Clear button, simple */}
-          <button
-            onClick={clearMarks}
-            style={{
-              marginTop: 12,
-              padding: "10px 14px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.55)",
-              background: "rgba(0,0,0,0.55)",
-              color: "white",
-              fontWeight: 800,
-              textShadow: "0 2px 10px rgba(0,0,0,0.8)",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
-              cursor: "pointer",
-            }}
-          >
-            Clear marks
-          </button>
-        </div>
-
-        {/* Grid: plain black squares over background */}
-        <div style={{ marginTop: 16 }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
-              gap: 10,
-              width: "100%",
-              maxWidth: 760,
-              margin: "0 auto",
-            }}
-          >
-            {grid.map((row, r) =>
-              row.map((label, c) => {
-                const marked = isMarked(r, c);
-                const isCenter = r === center && c === center;
-
-                return (
-                  <button
-                    key={`${r}-${c}`}
-                    onClick={() => toggleMark(r, c)}
-                    style={{
-                      aspectRatio: "1 / 1",
-                      borderRadius: 18,
-                      border: marked ? "2px solid #10b981" : "1px solid rgba(255,255,255,0.18)",
-                      background: marked ? "#065f46" : "rgba(0,0,0,0.82)",
-                      color: "white",
-                      fontWeight: 850,
-                      padding: 10,
-                      lineHeight: 1.12,
-                      textAlign: "center",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      wordBreak: "break-word",
-                      boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {label}
-                    {isCenter && <div style={{ fontSize: 12, marginTop: 6, opacity: 0.95 }}>FREE</div>}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
