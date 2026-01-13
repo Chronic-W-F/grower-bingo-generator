@@ -110,17 +110,15 @@ export default function CardPage({
         return;
       }
 
-      // Load local first (fast)
       const local = loadPackFromLocalStorage(packId);
       if (local) {
-        const foundLocal = local.cards.find((c) => c.id === cardId) || null;
+        const found = local.cards.find((c) => c.id === cardId) || null;
         if (!cancelled) {
           setPack(local);
-          setCard(foundLocal);
+          setCard(found);
         }
       }
 
-      // Then refresh from API (source of truth)
       const remote = await fetchPackFromApi(packId);
       if (cancelled) return;
 
@@ -158,7 +156,7 @@ export default function CardPage({
   const sponsorName = pack?.sponsorName || "Joe’s Grows";
   const bannerUrl = pack?.bannerImageUrl || "/banners/current.png";
 
-  // You uploaded bud-light.png to /public/banners/
+  // Background image
   const bgUrl = "/banners/bud-light.png";
 
   const size = card?.grid?.length || 5;
@@ -204,19 +202,20 @@ export default function CardPage({
         backgroundSize: "cover",
         backgroundPosition: "center",
         backgroundAttachment: "fixed",
-        padding: 16,
+        padding: 12,
       }}
     >
+      {/* Translucent main panel */}
       <div
         style={{
-          maxWidth: 720,
+          maxWidth: 760,
           margin: "0 auto",
-          padding: 16,
-          background: "rgba(255,255,255,0.78)",
-          borderRadius: 22,
+          padding: 14,
+          background: "rgba(255,255,255,0.68)",
+          borderRadius: 24,
           border: "1px solid rgba(0,0,0,0.08)",
-          boxShadow: "0 16px 50px rgba(0,0,0,0.18)",
-          backdropFilter: "blur(2px)",
+          boxShadow: "0 18px 55px rgba(0,0,0,0.22)",
+          backdropFilter: "blur(4px)",
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
         }}
       >
@@ -225,9 +224,9 @@ export default function CardPage({
           style={{
             borderRadius: 18,
             overflow: "hidden",
-            border: "1px solid rgba(255,255,255,0.12)",
+            border: "1px solid rgba(255,255,255,0.18)",
             marginBottom: 12,
-            background: "rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.08)",
             padding: 10,
           }}
         >
@@ -238,29 +237,52 @@ export default function CardPage({
               width: "100%",
               height: "clamp(110px, 22vw, 170px)",
               objectFit: "contain",
-              objectPosition: "center",
               display: "block",
             }}
           />
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+        {/* Header */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
           <div>
-            <h1 style={{ marginTop: 0, marginBottom: 6 }}>{title}</h1>
+            <h1 style={{ margin: "0 0 6px 0" }}>{title}</h1>
             <div>Sponsor: {sponsorName}</div>
             <div>
               Card ID: <b>{card.id}</b>
             </div>
           </div>
-          <button onClick={clearMarks}>Clear marks</button>
+
+          <button
+            onClick={clearMarks}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(0,0,0,0.18)",
+              background: "rgba(255,255,255,0.9)",
+              fontWeight: 700,
+            }}
+          >
+            Clear marks
+          </button>
         </div>
 
+        {/* Grid */}
         <div style={{ marginTop: 14 }}>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: `repeat(${size}, 1fr)`,
-              gap: 10,
+              gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
+              gap: 8,
+              width: "100%",
+              maxWidth: 680,
+              margin: "0 auto",
             }}
           >
             {grid.map((row, r) =>
@@ -275,18 +297,20 @@ export default function CardPage({
                     style={{
                       aspectRatio: "1 / 1",
                       borderRadius: 18,
-                      border: marked ? "2px solid #10b981" : "1px solid #555",
+                      border: marked ? "2px solid #10b981" : "1px solid #444",
                       background: marked ? "#065f46" : "#111",
                       color: "white",
                       fontWeight: 700,
-                      padding: 10,
+                      padding: 8,
                       lineHeight: 1.15,
                       textAlign: "center",
                       wordBreak: "break-word",
                     }}
                   >
                     {label}
-                    {isCenter && <div style={{ fontSize: 12, marginTop: 6 }}>FREE</div>}
+                    {isCenter && (
+                      <div style={{ fontSize: 12, marginTop: 6 }}>FREE</div>
+                    )}
                   </button>
                 );
               })
