@@ -93,6 +93,9 @@ export default function CardPage({
   const [error, setError] = useState("");
   const [marks, setMarks] = useState<Record<string, boolean>>({});
 
+  // ✅ Confirm-clear modal
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+
   useEffect(() => {
     if (!packId || !cardId) return;
     setMarks(loadMarks(packId, cardId));
@@ -183,6 +186,19 @@ export default function CardPage({
     saveMarks(packId, cardId, {});
   }
 
+  function requestClearMarks() {
+    setConfirmClearOpen(true);
+  }
+
+  function cancelClearMarks() {
+    setConfirmClearOpen(false);
+  }
+
+  function confirmClearMarks() {
+    clearMarks();
+    setConfirmClearOpen(false);
+  }
+
   function isMarked(r: number, c: number) {
     if (r === center && c === center) return true;
     return !!marks[cellKey(r, c)];
@@ -247,7 +263,7 @@ export default function CardPage({
           </div>
 
           <button
-            onClick={clearMarks}
+            onClick={requestClearMarks}
             style={{
               marginTop: 12,
               padding: "10px 14px",
@@ -366,6 +382,84 @@ export default function CardPage({
           </div>
         </div>
       </div>
+
+      {/* ✅ Stylized Confirm Clear Modal */}
+      {confirmClearOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.60)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+            zIndex: 9999,
+          }}
+          onClick={cancelClearMarks}
+        >
+          <div
+            style={{
+              width: "min(520px, 100%)",
+              borderRadius: 18,
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: "rgba(10, 14, 12, 0.96)",
+              color: "white",
+              padding: 16,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 8 }}>
+              Clear all marks?
+            </div>
+
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.80)", marginBottom: 14 }}>
+              This will remove every checked square on this card. You can’t undo it.
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                onClick={cancelClearMarks}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "transparent",
+                  color: "white",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={confirmClearMarks}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "rgba(185, 28, 28, 0.92)",
+                  color: "white",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+              >
+                Clear marks
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
-}
+            }
