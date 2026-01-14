@@ -25,6 +25,10 @@ const SHARED_POOL_KEY = "grower-bingo:pool:v1";
 const LAST_GENERATED_PACK_KEY = "grower-bingo:lastGeneratedPack:v1";
 const LAST_PACK_KEY = "grower-bingo:lastPackId:v1";
 
+// Splash
+const SPLASH_DISMISSED_KEY = "grower-bingo:splashDismissed:v1";
+const SPLASH_IMAGE_SRC = "/splash/harvest-heroes-bingo.png";
+
 /**
  * Option A pool: short, obvious, caller-friendly.
  * Rules:
@@ -191,7 +195,11 @@ function downloadBase64Pdf(filename: string, base64: string) {
   }, 1500);
 }
 
-function downloadTextFile(filename: string, text: string, mime = "text/plain;charset=utf-8") {
+function downloadTextFile(
+  filename: string,
+  text: string,
+  mime = "text/plain;charset=utf-8"
+) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -230,7 +238,10 @@ function syncPackToLocalStorage(restored: GeneratedPack) {
             : [],
         usedItems: Array.isArray(restored.usedItems) ? restored.usedItems : [],
       };
-      window.localStorage.setItem(`grower-bingo:pack:${packId}`, JSON.stringify(storedPack));
+      window.localStorage.setItem(
+        `grower-bingo:pack:${packId}`,
+        JSON.stringify(storedPack)
+      );
     }
 
     // Option B sync: caller pool becomes usedItems (actual squares on cards)
@@ -263,8 +274,34 @@ export default function Page() {
   const [singleCardId, setSingleCardId] = useState<string>("");
   const [isSingleDownloading, setIsSingleDownloading] = useState(false);
 
+  // Splash UI
+  const [showSplash, setShowSplash] = useState(false);
+
   const poolLines = useMemo(() => normalizeLines(itemsText), [itemsText]);
   const poolCount = poolLines.length;
+
+  // Splash: show once unless dismissed; allow forcing with ?splash=1
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const force = params.get("splash") === "1";
+      const dismissed = window.localStorage.getItem(SPLASH_DISMISSED_KEY) === "1";
+      setShowSplash(force || !dismissed);
+    } catch {
+      setShowSplash(true);
+    }
+  }, []);
+
+  function dismissSplash() {
+    try {
+      window.localStorage.setItem(SPLASH_DISMISSED_KEY, "1");
+    } catch {}
+    setShowSplash(false);
+    // keep them at the top of the generator UI
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {}
+  }
 
   // Restore last generated pack AND re-sync lastPackId so Caller/Winners follow it
   useEffect(() => {
@@ -374,7 +411,10 @@ export default function Page() {
             usedItems: Array.isArray(data.usedItems) ? data.usedItems : [],
           };
 
-          window.localStorage.setItem(`grower-bingo:pack:${packId}`, JSON.stringify(storedPack));
+          window.localStorage.setItem(
+            `grower-bingo:pack:${packId}`,
+            JSON.stringify(storedPack)
+          );
         }
       } catch {
         // ignore
@@ -475,6 +515,65 @@ export default function Page() {
     }
   }
 
+  // Splash overlay (covers generator until "Let's Play")
+  if (showSplash) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: 16,
+          background: "#0b0f0d",
+        }}
+      >
+        <div style={{ width: "min(520px, 100%)" }}>
+          <div
+            style={{
+              borderRadius: 18,
+              overflow: "hidden",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(0,0,0,0.25)",
+            }}
+          >
+            <img
+              src={SPLASH_IMAGE_SRC}
+              alt="Harvest Heroes Bingo"
+              style={{
+                width: "100%",
+                height: "auto",
+                display: "block",
+                objectFit: "contain",
+              }}
+            />
+          </div>
+
+          <button
+            onClick={dismissSplash}
+            style={{
+              width: "100%",
+              marginTop: 14,
+              padding: "14px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.18)",
+              background: "rgba(17, 24, 39, 0.9)",
+              color: "white",
+              fontSize: 18,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            Let&apos;s Play
+          </button>
+
+          <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.70)" }}>
+            Tip: add <b>?splash=1</b> to the URL any time you want to show this screen again.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -546,7 +645,8 @@ export default function Page() {
               }}
             />
             <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
-              Weekly swap: replace <b>public/banners/current.png</b> in GitHub. Keep this value unchanged.
+              Weekly swap: replace <b>public/banners/current.png</b> in GitHub. Keep this value
+              unchanged.
             </div>
           </div>
 
@@ -722,7 +822,9 @@ export default function Page() {
                 background:
                   !pack?.cardsPack?.packId && !pack?.requestKey ? "#9ca3af" : "white",
                 cursor:
-                  !pack?.cardsPack?.packId && !pack?.requestKey ? "not-allowed" : "pointer",
+                  !pack?.cardsPack?.packId && !pack?.requestKey
+                    ? "not-allowed"
+                    : "pointer",
                 minWidth: 220,
               }}
             >
