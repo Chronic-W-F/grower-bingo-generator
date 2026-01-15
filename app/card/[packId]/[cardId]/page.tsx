@@ -305,12 +305,14 @@ export default function CardPage({
                       justifyContent: "center",
                       position: "relative",
                       overflow: "hidden",
-                      wordBreak: "break-word",
+                      // ✅ CHANGED: prevent those ugly letter breaks like "Aer/atio/n"
+                      wordBreak: "normal",
+                      overflowWrap: "normal",
                       boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
                       cursor: "pointer",
                     }}
                   >
-                    {/* ✅ CHANGED: icon fills the whole square, label on top */}
+                    {/* ✅ CHANGED: icon is FULL exposure (no watermark fade) */}
                     {iconSrc ? (
                       <img
                         src={iconSrc}
@@ -323,37 +325,38 @@ export default function CardPage({
                           height: "100%",
                           objectFit: "cover",
                           objectPosition: "center",
-                          opacity: 1,
+                          opacity: 1, // FULL exposure
                           pointerEvents: "none",
                         }}
-                        // ✅ if missing icon file (404), hide so you don't see broken image
                         onError={(e) => {
                           (e.currentTarget as HTMLImageElement).style.display = "none";
                         }}
                       />
                     ) : null}
 
-                    {/* readability overlay */}
+                    {/* ✅ CHANGED: slightly lighter dark overlay so the icon still pops */}
                     <div
                       style={{
                         position: "absolute",
                         inset: 0,
-                        background: "rgba(0,0,0,0.50)",
+                        background: "rgba(0,0,0,0.38)",
                         pointerEvents: "none",
                       }}
                     />
 
-                    {/* text on top */}
+                    {/* ✅ CHANGED: smaller text, wraps by words only */}
                     <div
                       style={{
                         position: "relative",
                         zIndex: 2,
                         padding: "4px 6px",
-                        fontSize: 18,
-                        fontWeight: 950,
+                        fontSize: 15, // smaller than 18
+                        fontWeight: 900,
+                        lineHeight: 1.05,
                         textAlign: "center",
                         color: "white",
                         textShadow: "0 2px 10px rgba(0,0,0,0.9)",
+                        whiteSpace: "normal",
                       }}
                     >
                       {label}
