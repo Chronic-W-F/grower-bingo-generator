@@ -93,8 +93,6 @@ export default function CardPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [marks, setMarks] = useState<Record<string, boolean>>({});
-
-  // Confirm-clear modal
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
   useEffect(() => {
@@ -115,7 +113,6 @@ export default function CardPage({
         return;
       }
 
-      // Load local first
       const local = loadPackFromLocalStorage(packId);
       if (local) {
         const found = local.cards.find((c) => c.id === cardId) || null;
@@ -125,7 +122,6 @@ export default function CardPage({
         }
       }
 
-      // Then fetch fresh
       const remote = await fetchPackFromApi(packId);
       if (cancelled) return;
 
@@ -162,8 +158,6 @@ export default function CardPage({
   const title = pack?.title || "Harvest Heroes Bingo";
   const sponsorName = pack?.sponsorName || "Joe’s Grows";
   const bannerUrl = pack?.bannerImageUrl || "/banners/current.png";
-
-  // Background image
   const bgUrl = "/banners/bud-light.png";
 
   const size = card?.grid?.length || 5;
@@ -187,19 +181,6 @@ export default function CardPage({
   function clearMarks() {
     setMarks({});
     saveMarks(packId, cardId, {});
-  }
-
-  function requestClearMarks() {
-    setConfirmClearOpen(true);
-  }
-
-  function cancelClearMarks() {
-    setConfirmClearOpen(false);
-  }
-
-  function confirmClearMarks() {
-    clearMarks();
-    setConfirmClearOpen(false);
   }
 
   function isMarked(r: number, c: number) {
@@ -266,7 +247,7 @@ export default function CardPage({
           </div>
 
           <button
-            onClick={requestClearMarks}
+            onClick={() => setConfirmClearOpen(true)}
             style={{
               marginTop: 12,
               padding: "10px 14px",
@@ -320,7 +301,6 @@ export default function CardPage({
                       lineHeight: 1.12,
                       textAlign: "center",
                       display: "flex",
-                      flexDirection: "column",
                       alignItems: "center",
                       justifyContent: "center",
                       position: "relative",
@@ -330,8 +310,8 @@ export default function CardPage({
                       cursor: "pointer",
                     }}
                   >
-                    {/* ✅ Icon = primary visual */}
-                    {iconSrc && (
+                    {/* ✅ Icon fills the tile */}
+                    {iconSrc ? (
                       <img
                         src={iconSrc}
                         alt=""
@@ -339,36 +319,48 @@ export default function CardPage({
                         style={{
                           position: "absolute",
                           inset: 0,
-                          margin: "auto",
-                          width: "72%",
-                          height: "72%",
-                          objectFit: "contain",
-                          opacity: 0.9,
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover", // fills square
+                          opacity: 0.95,
                           pointerEvents: "none",
-                          zIndex: 0,
+                        }}
+                        // ✅ if somehow an icon 404's, hide it so you don't see the broken icon
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
                         }}
                       />
-                    )}
+                    ) : null}
 
-                    {/* ✅ Text always on top */}
+                    {/* ✅ Dark readability layer (so text is always readable) */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: "rgba(0,0,0,0.55)",
+                        pointerEvents: "none",
+                      }}
+                    />
+
+                    {/* ✅ Text on top */}
                     <div
                       style={{
                         position: "relative",
                         zIndex: 2,
                         padding: "4px 6px",
-                        fontSize: 14,
-                        fontWeight: 900,
+                        fontSize: 18,
+                        fontWeight: 950,
                         textAlign: "center",
                         color: "white",
                         textShadow: "0 2px 10px rgba(0,0,0,0.9)",
-                        background: "rgba(0,0,0,0.35)",
-                        borderRadius: 8,
                       }}
                     >
                       {label}
-                      {isCenter && (
-                        <div style={{ fontSize: 12, marginTop: 4 }}>FREE</div>
-                      )}
+                      {isCenter ? (
+                        <div style={{ fontSize: 12, marginTop: 6, opacity: 0.95 }}>
+                          FREE
+                        </div>
+                      ) : null}
                     </div>
                   </button>
                 );
@@ -378,7 +370,7 @@ export default function CardPage({
         </div>
       </div>
 
-      {/* Confirm Clear Modal */}
+      {/* Confirm clear */}
       {confirmClearOpen ? (
         <div
           role="dialog"
@@ -392,7 +384,7 @@ export default function CardPage({
             padding: 16,
             zIndex: 9999,
           }}
-          onClick={cancelClearMarks}
+          onClick={() => setConfirmClearOpen(false)}
         >
           <div
             style={{
@@ -414,16 +406,9 @@ export default function CardPage({
               This will remove every checked square on this card. You can’t undo it.
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                justifyContent: "flex-end",
-                flexWrap: "wrap",
-              }}
-            >
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
               <button
-                onClick={cancelClearMarks}
+                onClick={() => setConfirmClearOpen(false)}
                 style={{
                   padding: "10px 14px",
                   borderRadius: 12,
@@ -438,7 +423,10 @@ export default function CardPage({
               </button>
 
               <button
-                onClick={confirmClearMarks}
+                onClick={() => {
+                  clearMarks();
+                  setConfirmClearOpen(false);
+                }}
                 style={{
                   padding: "10px 14px",
                   borderRadius: 12,
