@@ -62,8 +62,8 @@ function loadMarks(packId: string, cardId: string): Record<string, boolean> {
   try {
     const raw = window.localStorage.getItem(marksKey(packId, cardId));
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, boolean>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const go = JSON.parse(raw) as Record<string, boolean>;
+    return go && typeof go === "object" ? go : {};
   } catch {
     return {};
   }
@@ -170,6 +170,14 @@ export default function CardPage({
     return card?.grid || Array.from({ length: 5 }, () => Array(5).fill(""));
   }, [card]);
 
+  // ✅ cache-buster so icons/banner update instantly (kills “it exists but won’t show” issues)
+  const cacheBust = pack?.createdAt ? String(pack.createdAt) : String(Date.now());
+  function bust(url?: string) {
+    if (!url) return url;
+    // don’t double-bust if already has ?
+    return url.includes("?") ? `${url}&v=${cacheBust}` : `${url}?v=${cacheBust}`;
+  }
+
   function toggleMark(r: number, c: number) {
     if (r === center && c === center) return;
     const k = cellKey(r, c);
@@ -235,14 +243,14 @@ export default function CardPage({
             }}
           >
             <img
-              src={bannerUrl}
+              src={bust(bannerUrl)}
               alt="Weekly banner"
               style={{
                 position: "absolute",
                 inset: 0,
                 width: "100%",
                 height: "100%",
-                objectFit: "contain", // matches your locked decision: no cropping
+                objectFit: "contain",
                 objectPosition: "center",
                 display: "block",
               }}
@@ -298,13 +306,15 @@ export default function CardPage({
                 const marked = isMarked(r, c);
                 const isCenter = r === center && c === center;
 
-                // ✅ Use helper (handles spacing, smart apostrophes, case)
-                const iconSrc = !isCenter ? getIconForLabel(label) : undefined;
+                // ✅ icon lookup (text-only if no match)
+                const rawIcon = !isCenter ? getIconForLabel(label) : undefined;
+                const iconSrc = bust(rawIcon);
 
                 return (
                   <button
                     key={`${r}-${c}`}
                     onClick={() => toggleMark(r, c)}
+                    disabled={isCenter}
                     style={{
                       aspectRatio: "1 / 1",
                       borderRadius: 18,
@@ -325,11 +335,11 @@ export default function CardPage({
                       overflow: "hidden",
                       wordBreak: "break-word",
                       boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                      cursor: "pointer",
+                      cursor: isCenter ? "default" : "pointer",
                     }}
                   >
                     {/* Icon watermark */}
-                    {iconSrc && (
+                    {iconSrc ? (
                       <img
                         src={iconSrc}
                         alt=""
@@ -345,7 +355,7 @@ export default function CardPage({
                           pointerEvents: "none",
                         }}
                       />
-                    )}
+                    ) : null}
 
                     {/* readability overlay */}
                     <div
@@ -358,7 +368,7 @@ export default function CardPage({
                       }}
                     />
 
-                    {/* ✅ ONLY ONE LABEL (removes the “doubled up” look) */}
+                    {/* Label */}
                     <div
                       style={{
                         position: "relative",
@@ -369,11 +379,9 @@ export default function CardPage({
                       }}
                     >
                       {label}
-                      {isCenter && (
-                        <div style={{ fontSize: 12, marginTop: 6, opacity: 0.95 }}>
-                          FREE
-                        </div>
-                      )}
+                      {isCenter ? (
+                        <div style={{ fontSize: 12, marginTop: 6, opacity: 0.95 }}>FREE</div>
+                      ) : null}
                     </div>
                   </button>
                 );
@@ -383,7 +391,7 @@ export default function CardPage({
         </div>
       </div>
 
-      {/* ✅ Stylized Confirm Clear Modal */}
+      {/* Confirm Clear Modal */}
       {confirmClearOpen ? (
         <div
           role="dialog"
@@ -419,14 +427,7 @@ export default function CardPage({
               This will remove every checked square on this card. You can’t undo it.
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                justifyContent: "flex-end",
-                flexWrap: "wrap",
-              }}
-            >
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
               <button
                 onClick={cancelClearMarks}
                 style={{
@@ -462,4 +463,4 @@ export default function CardPage({
       ) : null}
     </div>
   );
-            }
+}
