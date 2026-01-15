@@ -1,9 +1,14 @@
-// force rebuild 2026-01-15
 // lib/iconMap.ts
 // Icons live in /public/bingo-icons/*
 // Use: getIconForLabel(label) to safely resolve paths even if label has weird spacing/case.
 
+const ICON_VERSION = "v1"; // bump to v2, v3, etc if you ever want to hard-bust cache
+
 export const ICON_MAP: Record<string, string> = {
+  "Foxtails": "/bingo-icons/foxtails.png",
+  "Root rot": "/bingo-icons/root-rot.png",
+
+  // keep your existing mappings below (unchanged)
   "Trellis net": "/bingo-icons/trellis-net.png",
   "Lollipop": "/bingo-icons/lollipop.png",
   "Defoliate": "/bingo-icons/defoliate.png",
@@ -14,7 +19,6 @@ export const ICON_MAP: Record<string, string> = {
   "Heat stress": "/bingo-icons/heat-stress.png",
   "Light burn": "/bingo-icons/light-burn.png",
   "Herm watch": "/bingo-icons/herm-watch.png",
-  "Foxtails": "/bingo-icons/foxtails.png",
   "Amber trichomes": "/bingo-icons/amber-trichomes.png",
   "Cloudy trichomes": "/bingo-icons/cloudy-trichomes.png",
   "Clear trichomes": "/bingo-icons/clear-trichomes.png",
@@ -53,7 +57,6 @@ export const ICON_MAP: Record<string, string> = {
   "Copper Def": "/bingo-icons/copper-def.png",
   "Molybdenum Def": "/bingo-icons/molybdenum-def.png",
 
-  "Root rot": "/bingo-icons/root-rot.png",
   "Slime roots": "/bingo-icons/slime-roots.png",
   "Brown roots": "/bingo-icons/brown-roots.png",
   "White roots": "/bingo-icons/white-roots.png",
@@ -127,42 +130,52 @@ export const ICON_MAP: Record<string, string> = {
   "Predator mites": "/bingo-icons/predator-mites.png",
   "Ladybugs released": "/bingo-icons/ladybugs-released.png",
 
-  // ✅ Add this when you add the file:
-  // public/bingo-icons/sticky-traps.png
+  // Easy add you mentioned:
   "Sticky traps": "/bingo-icons/sticky-traps.png",
+};
+
+// Optional aliases: map “different wording” -> canonical label
+const ICON_ALIASES: Record<string, string> = {
+  "Root Rot": "Root rot",
+  "FOXTails": "Foxtails",
 };
 
 function normalizeKey(label: string) {
   return (label || "")
     .trim()
     .replace(/\s+/g, " ")
-    // handle smart apostrophes and weird unicode hyphens that can sneak in
-    .replace(/[’‘]/g, "'")
-    .replace(/[‐-‒–—]/g, "-");
+    .replace(/[’]/g, "'"); // smart apostrophe -> normal apostrophe
 }
 
 let _lowerIndex: Record<string, string> | null = null;
 
 function getLowerIndex() {
   if (_lowerIndex) return _lowerIndex;
-
   const idx: Record<string, string> = {};
   for (const k of Object.keys(ICON_MAP)) {
     idx[normalizeKey(k).toLowerCase()] = k;
   }
-
   _lowerIndex = idx;
   return idx;
+}
+
+function withVersion(path: string) {
+  // Add a cache-bust query string so mobile doesn’t keep stale results
+  return path.includes("?") ? `${path}&${ICON_VERSION}` : `${path}?${ICON_VERSION}`;
 }
 
 export function getIconForLabel(label: string): string | undefined {
   const norm = normalizeKey(label);
 
-  // exact match first (fast path)
-  if (ICON_MAP[norm]) return ICON_MAP[norm];
+  // alias exact
+  const aliased = ICON_ALIASES[norm];
+  if (aliased && ICON_MAP[aliased]) return withVersion(ICON_MAP[aliased]);
 
-  // case-insensitive match
+  // exact match
+  if (ICON_MAP[norm]) return withVersion(ICON_MAP[norm]);
+
+  // case-insensitive fallback
   const idx = getLowerIndex();
   const originalKey = idx[norm.toLowerCase()];
-  return originalKey ? ICON_MAP[originalKey] : undefined;
+  return originalKey ? withVersion(ICON_MAP[originalKey]) : undefined;
 }
