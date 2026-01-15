@@ -125,23 +125,31 @@ export const ICON_MAP: Record<string, string> = {
   "Spinosad talk": "/bingo-icons/spinosad-talk.png",
   "Predator mites": "/bingo-icons/predator-mites.png",
   "Ladybugs released": "/bingo-icons/ladybugs-released.png",
+
+  // ✅ Add this when you add the file:
+  // public/bingo-icons/sticky-traps.png
+  "Sticky traps": "/bingo-icons/sticky-traps.png",
 };
 
 function normalizeKey(label: string) {
   return (label || "")
     .trim()
     .replace(/\s+/g, " ")
-    .replace(/[’]/g, "'"); // smart apostrophe -> normal apostrophe
+    // handle smart apostrophes and weird unicode hyphens that can sneak in
+    .replace(/[’‘]/g, "'")
+    .replace(/[‐-‒–—]/g, "-");
 }
 
 let _lowerIndex: Record<string, string> | null = null;
 
 function getLowerIndex() {
   if (_lowerIndex) return _lowerIndex;
+
   const idx: Record<string, string> = {};
   for (const k of Object.keys(ICON_MAP)) {
     idx[normalizeKey(k).toLowerCase()] = k;
   }
+
   _lowerIndex = idx;
   return idx;
 }
@@ -149,10 +157,10 @@ function getLowerIndex() {
 export function getIconForLabel(label: string): string | undefined {
   const norm = normalizeKey(label);
 
-  // exact match first
+  // exact match first (fast path)
   if (ICON_MAP[norm]) return ICON_MAP[norm];
 
-  // case-insensitive fallback (handles "Foxtails" vs "foxtails")
+  // case-insensitive match
   const idx = getLowerIndex();
   const originalKey = idx[norm.toLowerCase()];
   return originalKey ? ICON_MAP[originalKey] : undefined;
