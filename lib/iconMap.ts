@@ -1,3 +1,4 @@
+// force rebuild 2026-01-15
 // lib/iconMap.ts
 // Icons live in /public/bingo-icons/*
 // Use: getIconForLabel(label) to safely resolve paths even if label has weird spacing/case.
