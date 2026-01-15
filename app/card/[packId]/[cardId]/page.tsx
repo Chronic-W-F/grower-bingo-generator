@@ -1,3 +1,4 @@
+// app/card/[packId]/[cardId]/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -62,8 +63,8 @@ function loadMarks(packId: string, cardId: string): Record<string, boolean> {
   try {
     const raw = window.localStorage.getItem(marksKey(packId, cardId));
     if (!raw) return {};
-    const go = JSON.parse(raw) as Record<string, boolean>;
-    return go && typeof go === "object" ? go : {};
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }
@@ -93,7 +94,7 @@ export default function CardPage({
   const [error, setError] = useState("");
   const [marks, setMarks] = useState<Record<string, boolean>>({});
 
-  // ✅ Confirm-clear modal
+  // Confirm-clear modal
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
   useEffect(() => {
@@ -114,6 +115,7 @@ export default function CardPage({
         return;
       }
 
+      // Load local first
       const local = loadPackFromLocalStorage(packId);
       if (local) {
         const found = local.cards.find((c) => c.id === cardId) || null;
@@ -123,6 +125,7 @@ export default function CardPage({
         }
       }
 
+      // Then fetch fresh
       const remote = await fetchPackFromApi(packId);
       if (cancelled) return;
 
@@ -160,7 +163,7 @@ export default function CardPage({
   const sponsorName = pack?.sponsorName || "Joe’s Grows";
   const bannerUrl = pack?.bannerImageUrl || "/banners/current.png";
 
-  // Background image (put the actual file at: public/banners/bud-light.png)
+  // Background image
   const bgUrl = "/banners/bud-light.png";
 
   const size = card?.grid?.length || 5;
@@ -169,14 +172,6 @@ export default function CardPage({
   const grid = useMemo(() => {
     return card?.grid || Array.from({ length: 5 }, () => Array(5).fill(""));
   }, [card]);
-
-  // ✅ cache-buster so icons/banner update instantly (kills “it exists but won’t show” issues)
-  const cacheBust = pack?.createdAt ? String(pack.createdAt) : String(Date.now());
-  function bust(url?: string) {
-    if (!url) return url;
-    // don’t double-bust if already has ?
-    return url.includes("?") ? `${url}&v=${cacheBust}` : `${url}?v=${cacheBust}`;
-  }
 
   function toggleMark(r: number, c: number) {
     if (r === center && c === center) return;
@@ -243,7 +238,7 @@ export default function CardPage({
             }}
           >
             <img
-              src={bust(bannerUrl)}
+              src={bannerUrl}
               alt="Weekly banner"
               style={{
                 position: "absolute",
@@ -306,15 +301,12 @@ export default function CardPage({
                 const marked = isMarked(r, c);
                 const isCenter = r === center && c === center;
 
-                // ✅ icon lookup (text-only if no match)
-                const rawIcon = !isCenter ? getIconForLabel(label) : undefined;
-                const iconSrc = bust(rawIcon);
+                const iconSrc = !isCenter ? getIconForLabel(label) : undefined;
 
                 return (
                   <button
                     key={`${r}-${c}`}
                     onClick={() => toggleMark(r, c)}
-                    disabled={isCenter}
                     style={{
                       aspectRatio: "1 / 1",
                       borderRadius: 18,
@@ -335,11 +327,11 @@ export default function CardPage({
                       overflow: "hidden",
                       wordBreak: "break-word",
                       boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                      cursor: isCenter ? "default" : "pointer",
+                      cursor: "pointer",
                     }}
                   >
-                    {/* Icon watermark */}
-                    {iconSrc ? (
+                    {/* ✅ Icon = primary visual */}
+                    {iconSrc && (
                       <img
                         src={iconSrc}
                         alt=""
@@ -347,41 +339,36 @@ export default function CardPage({
                         style={{
                           position: "absolute",
                           inset: 0,
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          opacity: 0.28,
-                          transform: "scale(1.03)",
+                          margin: "auto",
+                          width: "72%",
+                          height: "72%",
+                          objectFit: "contain",
+                          opacity: 0.9,
                           pointerEvents: "none",
+                          zIndex: 0,
                         }}
                       />
-                    ) : null}
+                    )}
 
-                    {/* readability overlay */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        background:
-                          "linear-gradient(to bottom, rgba(0,0,0,0.35), rgba(0,0,0,0.65))",
-                        pointerEvents: "none",
-                      }}
-                    />
-
-                    {/* Label */}
+                    {/* ✅ Text always on top */}
                     <div
                       style={{
                         position: "relative",
-                        zIndex: 1,
-                        padding: "0 6px",
+                        zIndex: 2,
+                        padding: "4px 6px",
                         fontSize: 14,
-                        textShadow: "0 2px 10px rgba(0,0,0,0.85)",
+                        fontWeight: 900,
+                        textAlign: "center",
+                        color: "white",
+                        textShadow: "0 2px 10px rgba(0,0,0,0.9)",
+                        background: "rgba(0,0,0,0.35)",
+                        borderRadius: 8,
                       }}
                     >
                       {label}
-                      {isCenter ? (
-                        <div style={{ fontSize: 12, marginTop: 6, opacity: 0.95 }}>FREE</div>
-                      ) : null}
+                      {isCenter && (
+                        <div style={{ fontSize: 12, marginTop: 4 }}>FREE</div>
+                      )}
                     </div>
                   </button>
                 );
@@ -427,7 +414,14 @@ export default function CardPage({
               This will remove every checked square on this card. You can’t undo it.
             </div>
 
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 onClick={cancelClearMarks}
                 style={{
