@@ -310,7 +310,7 @@ export default function CardPage({
                       cursor: "pointer",
                     }}
                   >
-                    {/* ✅ Icon fills the tile */}
+                    {/* ✅ CHANGED: icon fills the whole square, label on top */}
                     {iconSrc ? (
                       <img
                         src={iconSrc}
@@ -321,28 +321,29 @@ export default function CardPage({
                           inset: 0,
                           width: "100%",
                           height: "100%",
-                          objectFit: "cover", // fills square
-                          opacity: 0.95,
+                          objectFit: "cover",
+                          objectPosition: "center",
+                          opacity: 1,
                           pointerEvents: "none",
                         }}
-                        // ✅ if somehow an icon 404's, hide it so you don't see the broken icon
+                        // ✅ if missing icon file (404), hide so you don't see broken image
                         onError={(e) => {
                           (e.currentTarget as HTMLImageElement).style.display = "none";
                         }}
                       />
                     ) : null}
 
-                    {/* ✅ Dark readability layer (so text is always readable) */}
+                    {/* readability overlay */}
                     <div
                       style={{
                         position: "absolute",
                         inset: 0,
-                        background: "rgba(0,0,0,0.55)",
+                        background: "rgba(0,0,0,0.50)",
                         pointerEvents: "none",
                       }}
                     />
 
-                    {/* ✅ Text on top */}
+                    {/* text on top */}
                     <div
                       style={{
                         position: "relative",
@@ -402,11 +403,24 @@ export default function CardPage({
               Clear all marks?
             </div>
 
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.80)", marginBottom: 14 }}>
+            <div
+              style={{
+                fontSize: 14,
+                color: "rgba(255,255,255,0.80)",
+                marginBottom: 14,
+              }}
+            >
               This will remove every checked square on this card. You can’t undo it.
             </div>
 
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 onClick={() => setConfirmClearOpen(false)}
                 style={{
