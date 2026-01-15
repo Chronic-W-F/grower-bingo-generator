@@ -1,6 +1,7 @@
 // pdf/BingoPackPdf.tsx
 import React from "react";
 import { Document, Page, View, Text, StyleSheet, Image } from "@react-pdf/renderer";
+import { getIconForLabel } from "@/lib/iconMap";
 
 type BingoCard = {
   id: string;
@@ -11,7 +12,7 @@ type Props = {
   cards: BingoCard[];
   gridSize?: number;
 
-  // Banner: API now sends this as a data-uri (preferred) or https url
+  // Banner: API sends this as a data-uri (preferred) or https url
   bannerImageUrl?: string;
 
   // Kept for backward compatibility with older API/PDF versions
@@ -19,6 +20,13 @@ type Props = {
 
   title?: string;
   sponsorName?: string;
+
+  /**
+   * IMPORTANT for icons:
+   * React-PDF runs server-side, so "/bingo-icons/x.png" can fail.
+   * We pass origin (ex: https://yourapp.vercel.app) and convert to absolute URL.
+   */
+  origin?: string;
 };
 
 const PAGE_PADDING = 36;
@@ -32,6 +40,14 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function resolvePublicSrc(src: string, origin?: string) {
+  if (!src) return src;
+  if (src.startsWith("data:")) return src;
+  if (src.startsWith("http://") || src.startsWith("https://")) return src;
+  if (src.startsWith("/") && origin) return `${origin}${src}`;
+  return src;
+}
+
 export default function BingoPackPdf({
   cards,
   gridSize: gridSizeProp,
@@ -39,6 +55,7 @@ export default function BingoPackPdf({
   sponsorImage,
   title,
   sponsorName,
+  origin,
 }: Props) {
   const inferred = cards?.[0]?.grid?.length ?? 5;
   const gridSize = (gridSizeProp ?? inferred) as number;
@@ -48,6 +65,7 @@ export default function BingoPackPdf({
   const gridHeight = cellSize * gridSize;
 
   const resolvedBanner = bannerImageUrl || sponsorImage || undefined;
+  const bannerSrc = resolvedBanner ? resolvePublicSrc(resolvedBanner, origin) : undefined;
 
   const styles = StyleSheet.create({
     page: {
@@ -132,10 +150,23 @@ export default function BingoPackPdf({
       justifyContent: "center",
     },
 
+    icon: {
+      width: "70%",
+      height: "70%",
+      objectFit: "contain",
+      marginBottom: 4,
+    },
+
     label: {
       fontSize: 10,
       textAlign: "center",
       lineHeight: 1.15,
+    },
+
+    labelSmall: {
+      fontSize: 9,
+      textAlign: "center",
+      lineHeight: 1.1,
     },
 
     cardIdFooter: {
@@ -155,9 +186,9 @@ export default function BingoPackPdf({
         return (
           <Page key={card.id} size="LETTER" style={styles.page}>
             <View style={styles.header}>
-              {resolvedBanner ? (
+              {bannerSrc ? (
                 <View style={styles.bannerWrap}>
-                  <Image src={resolvedBanner} style={styles.banner as any} />
+                  <Image src={bannerSrc} style={styles.banner as any} />
                 </View>
               ) : null}
 
@@ -181,10 +212,20 @@ export default function BingoPackPdf({
                         isLastRow ? styles.cellLastRow : null,
                       ];
 
+                      const iconRaw = getIconForLabel(label);
+                      const iconSrc = iconRaw ? resolvePublicSrc(iconRaw, origin) : undefined;
+
                       return (
                         <View key={`c-${card.id}-${rIdx}-${cIdx}`} style={cellStyle as any}>
                           <View style={styles.cellInner}>
-                            <Text style={styles.label}>{label}</Text>
+                            {iconSrc ? (
+                              <>
+                                <Image src={iconSrc} style={styles.icon as any} />
+                                <Text style={styles.labelSmall}>{label}</Text>
+                              </>
+                            ) : (
+                              <Text style={styles.label}>{label}</Text>
+                            )}
                           </View>
                         </View>
                       );
