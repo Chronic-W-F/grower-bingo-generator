@@ -305,14 +305,13 @@ export default function CardPage({
                       justifyContent: "center",
                       position: "relative",
                       overflow: "hidden",
-                      // ✅ CHANGED: prevent those ugly letter breaks like "Aer/atio/n"
                       wordBreak: "normal",
                       overflowWrap: "normal",
                       boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
                       cursor: "pointer",
                     }}
                   >
-                    {/* ✅ CHANGED: icon is FULL exposure (no watermark fade) */}
+                    {/* Icon full exposure */}
                     {iconSrc ? (
                       <img
                         src={iconSrc}
@@ -325,7 +324,7 @@ export default function CardPage({
                           height: "100%",
                           objectFit: "cover",
                           objectPosition: "center",
-                          opacity: 1, // FULL exposure
+                          opacity: 1,
                           pointerEvents: "none",
                         }}
                         onError={(e) => {
@@ -334,7 +333,7 @@ export default function CardPage({
                       />
                     ) : null}
 
-                    {/* ✅ CHANGED: slightly lighter dark overlay so the icon still pops */}
+                    {/* Lighter dark overlay so the icon still pops */}
                     <div
                       style={{
                         position: "absolute",
@@ -344,15 +343,15 @@ export default function CardPage({
                       }}
                     />
 
-                    {/* ✅ CHANGED: smaller text, wraps by words only */}
+                    {/* Text - UPDATED to avoid portrait clipping */}
                     <div
                       style={{
                         position: "relative",
                         zIndex: 2,
-                        padding: "4px 6px",
-                        fontSize: 15, // smaller than 18
+                        padding: "6px 6px", // ✅ more vertical breathing room
+                        fontSize: 13, // ✅ one more size smaller than before
                         fontWeight: 900,
-                        lineHeight: 1.05,
+                        lineHeight: 1.1, // ✅ prevents glyph clipping and 2-line cutoff
                         textAlign: "center",
                         color: "white",
                         textShadow: "0 2px 10px rgba(0,0,0,0.9)",
