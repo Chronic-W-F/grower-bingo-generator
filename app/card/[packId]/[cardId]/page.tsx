@@ -294,6 +294,7 @@ export default function CardPage({
                       border: marked
                         ? "2px solid #10b981"
                         : "1px solid rgba(255,255,255,0.18)",
+                      // ✅ always fill green when marked
                       background: marked ? "#065f46" : "rgba(0,0,0,0.82)",
                       color: "white",
                       fontWeight: 850,
@@ -311,7 +312,7 @@ export default function CardPage({
                       cursor: "pointer",
                     }}
                   >
-                    {/* Icon full exposure */}
+                    {/* Icon */}
                     {iconSrc ? (
                       <img
                         src={iconSrc}
@@ -333,25 +334,26 @@ export default function CardPage({
                       />
                     ) : null}
 
-                    {/* Lighter dark overlay so the icon still pops */}
+                    {/* ✅ NEW: marked overlay ABOVE the icon so icons still show but ALL squares turn green */}
                     <div
                       style={{
                         position: "absolute",
                         inset: 0,
-                        background: "rgba(0,0,0,0.38)",
+                        // If marked: green tint overlay. If not: normal dark overlay.
+                        background: marked ? "rgba(6, 95, 70, 0.72)" : "rgba(0,0,0,0.38)",
                         pointerEvents: "none",
                       }}
                     />
 
-                    {/* Text - UPDATED to avoid portrait clipping */}
+                    {/* Text */}
                     <div
                       style={{
                         position: "relative",
                         zIndex: 2,
-                        padding: "6px 6px", // ✅ more vertical breathing room
-                        fontSize: 13, // ✅ one more size smaller than before
+                        padding: "4px 6px",
+                        fontSize: 14, // keep smaller for portrait
                         fontWeight: 900,
-                        lineHeight: 1.1, // ✅ prevents glyph clipping and 2-line cutoff
+                        lineHeight: 1.05,
                         textAlign: "center",
                         color: "white",
                         textShadow: "0 2px 10px rgba(0,0,0,0.9)",
