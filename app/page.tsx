@@ -25,13 +25,19 @@ const SHARED_POOL_KEY = "grower-bingo:pool:v1";
 const LAST_GENERATED_PACK_KEY = "grower-bingo:lastGeneratedPack:v1";
 const LAST_PACK_KEY = "grower-bingo:lastPackId:v1";
 
+// Splash
+// NOTE: We no longer use SPLASH_DISMISSED_KEY for behavior.
+// Splash now shows on EVERY open/refresh. Optional skip: ?nosplash=1
+const SPLASH_DISMISSED_KEY = "grower-bingo:splashDismissed:v1";
+const SPLASH_IMAGE_SRC = "/splash/harvest-heroes-bingo.png";
+
 /**
- * Option A pool: short, obvious, caller-friendly.
+ * Short, obvious, caller-friendly.
  * Rules:
- * - Keep universal grow abbreviations (pH/EC/VPD/LED/IPM/LST/SCROG).
+ * - Keep universal grow abbreviations (pH/EC/VPD/LED/IPM/LST/SCROG/DWC).
  * - Use Def format for deficiencies (Cal Def, Mag Def, etc.). No element symbols.
- * - Prefer 1–2 words, 3 max.
- * - Replace overly-long/technical phrases with clear short tokens.
+ * - Prefer 1–2 words (3 max).
+ * - Keep labels icon-friendly and consistent.
  */
 const DEFAULT_ITEMS = `Trellis net
 Lollipop
@@ -68,7 +74,7 @@ Leaf claw
 Tip burn
 Nitro tox
 Chlorosis
-Sugar leaf curl
+Sugar curl
 
 Cal Def
 Mag Def
@@ -80,7 +86,7 @@ Zinc Def
 Manganese Def
 Boron Def
 Copper Def
-Molybdenum Def
+Moly Def
 
 Root rot
 Slime roots
@@ -95,7 +101,7 @@ Light leak
 Timer fail
 Pump fail
 Air pump fail
-Airstone clogged
+Airstone clog
 Low oxygen
 Water temp high
 Water temp low
@@ -105,8 +111,8 @@ Overflow scare
 Res top-off
 Res change
 Water change
-Hydro
-Soil
+Deep Water
+Soil grow
 Aircube
 Bubble bucket
 
@@ -116,22 +122,80 @@ Silica added
 PK boost
 KoolBloom week
 
+Mycorrhizae
+Trichoderma
+Bacillus
+Compost tea
+Molasses
+Yucca
+Aloe
+Kelp
+Neem oil
+Fish hydro
+Humic acid
+Fulvic acid
+Biochar
+Rock dust
+
+Worms
+Castings
+Vermicompost
+Worm bin
+Red wigglers
+Worm tea
+
+Living soil
+No till
+Cover crop
+Top dress
+Amendments
+Aeration
+Perlite
+Pumice
+Rice hulls
+Peat moss
+Coco coir
+
+DWC
+Reservoir
+Recirc
+Top feed
+Drip line
+Air stone
+Air line
+Check valve
+Water chiller
+Water heater
+RO water
+Tap water
+pH meter
+EC meter
+Calibration
+
+IPM spray
+Neem debate
+Spinosad talk
+Sticky traps
+BTI dunks
+Nematodes
+Predator mites
+Ladybugs
+
 Transition
 Week 3 frost
 Week 6 swell
 Flower fade
-Sugar leaves
 Leaf strip
 LST
 Supercrop
 SCROG
 Stake support
-Bud stacking
+Bud stack
 Popcorn buds
 Larf cleanup
 Calyx swell
-Pistils orange
-Pistils white
+White pistils
+Orange pistils
 
 Loupe check
 Scope pics
@@ -148,13 +212,7 @@ Grove bags
 Hay smell
 Terp pop
 Odor control
-Carbon swap
-
-IPM spray
-Neem debate
-Spinosad talk
-Predator mites
-Ladybugs released`;
+Carbon swap`;
 
 // ---------- existing code below (unchanged) ----------
 
@@ -191,7 +249,11 @@ function downloadBase64Pdf(filename: string, base64: string) {
   }, 1500);
 }
 
-function downloadTextFile(filename: string, text: string, mime = "text/plain;charset=utf-8") {
+function downloadTextFile(
+  filename: string,
+  text: string,
+  mime = "text/plain;charset=utf-8"
+) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -230,7 +292,10 @@ function syncPackToLocalStorage(restored: GeneratedPack) {
             : [],
         usedItems: Array.isArray(restored.usedItems) ? restored.usedItems : [],
       };
-      window.localStorage.setItem(`grower-bingo:pack:${packId}`, JSON.stringify(storedPack));
+      window.localStorage.setItem(
+        `grower-bingo:pack:${packId}`,
+        JSON.stringify(storedPack)
+      );
     }
 
     // Option B sync: caller pool becomes usedItems (actual squares on cards)
@@ -263,8 +328,32 @@ export default function Page() {
   const [singleCardId, setSingleCardId] = useState<string>("");
   const [isSingleDownloading, setIsSingleDownloading] = useState(false);
 
+  // Splash UI
+  const [showSplash, setShowSplash] = useState(false);
+
   const poolLines = useMemo(() => normalizeLines(itemsText), [itemsText]);
   const poolCount = poolLines.length;
+
+  // ✅ Splash: ALWAYS show on open/refresh.
+  // Optional skip: add ?nosplash=1 to the URL.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const skip = params.get("nosplash") === "1";
+      setShowSplash(!skip);
+    } catch {
+      setShowSplash(true);
+    }
+  }, []);
+
+  function dismissSplash() {
+    // No localStorage write. Splash will show again on next load.
+    setShowSplash(false);
+    // keep them at the top of the generator UI
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {}
+  }
 
   // Restore last generated pack AND re-sync lastPackId so Caller/Winners follow it
   useEffect(() => {
@@ -374,7 +463,10 @@ export default function Page() {
             usedItems: Array.isArray(data.usedItems) ? data.usedItems : [],
           };
 
-          window.localStorage.setItem(`grower-bingo:pack:${packId}`, JSON.stringify(storedPack));
+          window.localStorage.setItem(
+            `grower-bingo:pack:${packId}`,
+            JSON.stringify(storedPack)
+          );
         }
       } catch {
         // ignore
@@ -475,6 +567,65 @@ export default function Page() {
     }
   }
 
+  // Splash overlay (covers generator until "Let's Play")
+  if (showSplash) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: 16,
+          background: "#0b0f0d",
+        }}
+      >
+        <div style={{ width: "min(520px, 100%)" }}>
+          <div
+            style={{
+              borderRadius: 18,
+              overflow: "hidden",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(0,0,0,0.25)",
+            }}
+          >
+            <img
+              src={SPLASH_IMAGE_SRC}
+              alt="Harvest Heroes Bingo"
+              style={{
+                width: "100%",
+                height: "auto",
+                display: "block",
+                objectFit: "contain",
+              }}
+            />
+          </div>
+
+          <button
+            onClick={dismissSplash}
+            style={{
+              width: "100%",
+              marginTop: 14,
+              padding: "14px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.18)",
+              background: "rgba(17, 24, 39, 0.9)",
+              color: "white",
+              fontSize: 18,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            Let&apos;s Play
+          </button>
+
+          <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.70)" }}>
+            Tip: add <b>?nosplash=1</b> to the URL if you want to skip this screen.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -546,7 +697,8 @@ export default function Page() {
               }}
             />
             <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
-              Weekly swap: replace <b>public/banners/current.png</b> in GitHub. Keep this value unchanged.
+              Weekly swap: replace <b>public/banners/current.png</b> in GitHub. Keep this value
+              unchanged.
             </div>
           </div>
 
@@ -722,7 +874,9 @@ export default function Page() {
                 background:
                   !pack?.cardsPack?.packId && !pack?.requestKey ? "#9ca3af" : "white",
                 cursor:
-                  !pack?.cardsPack?.packId && !pack?.requestKey ? "not-allowed" : "pointer",
+                  !pack?.cardsPack?.packId && !pack?.requestKey
+                    ? "not-allowed"
+                    : "pointer",
                 minWidth: 220,
               }}
             >
@@ -847,4 +1001,4 @@ export default function Page() {
       ) : null}
     </div>
   );
-}
+              }
